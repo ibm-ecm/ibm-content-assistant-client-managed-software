@@ -1,0 +1,130 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2025 All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ibm-content-assistant-operator
+  labels:
+    control-plane: ibm-content-assistant-operator
+    app.kubernetes.io/instance: ibm-cas
+    app.kubernetes.io/managed-by: ibm-cas
+    app.kubernetes.io/name: ibm-cas
+    release: 1.0.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: ibm-content-assistant-operator
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+        productID: "a516ed219c22455093447670c3896299"
+        productName: "IBM Content Assistant Client Managed Software"
+        productVersion: "1.0.0"
+        productChargedContainers: ""
+        productMetric: "AUTHORIZED_USER"
+      labels:
+        control-plane: ibm-content-assistant-operator
+        app.kubernetes.io/instance: ibm-cas
+        app.kubernetes.io/managed-by: ibm-cas
+        app.kubernetes.io/name: ibm-cas
+        release: 1.0.0
+        com.ibm.cas.networking/egress-allow-all: 'true'
+        com.ibm.cas.networking/egress-allow-k8s-services: 'true'
+        com.ibm.cas.networking/egress-allow-ai-provider: 'true'
+        com.ibm.cas.networking/egress-allow-db: "true"
+        com.ibm.cas.networking/egress-allow-same-namespace: 'true'
+        com.ibm.cas.networking/egress-allow-cpfs: 'true'
+        com.ibm.cas.networking/egress-deny-all: 'true'
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 3
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+      securityContext:
+        runAsNonRoot: true
+          # seccompProfile:
+        # type: RuntimeDefault
+      ## Uncomment to specify the RunAsUser for the security context of the pod.
+      ## This is usually a numeric value that corresponds to a user ID.
+      #  runAsUser: 1001
+      imagePullSecrets:
+        - name: "ibm-entitlement-key"
+      terminationGracePeriodSeconds: 10
+      serviceAccountName: ibm-content-assistant-operator-sa
+      restartPolicy: Always
+      volumes:
+        - name: tmp-folder-pvc
+          emptyDir: { }
+      containers:
+        - command:
+            - /manager
+          args:
+            - --leader-elect
+            - --health-probe-bind-address=:8081
+          image: icr.io/cpopen/ibm-content-assistant-operator@sha256:7e8fe592a7fe30f1c984fcfca208b7cf495334e64b18f18210ff7e2584d1acaa
+          imagePullPolicy: IfNotPresent
+          name: manager
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          volumeMounts:
+            - name: tmp-folder-pvc
+              mountPath: /tmp
+

@@ -1,0 +1,20 @@
+{
+  "CAS_VERSION": {
+    "value": "<Required>",
+    "comment": [
+      "Selected IBM Content Assistant Version"
+    ]
+  },
+  "LICENSE": {
+    "value": "<Required>",
+    "comment": [
+      "Selected deployment license."
+    ]
+  },
+  "PLATFORM": {
+    "value": "<Required>",
+    "comment": [
+      "Platform type."
+    ]
+  }
+}

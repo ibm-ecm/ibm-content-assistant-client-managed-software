@@ -1,0 +1,20 @@
+################################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2023. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: ibm-content-assistant-operator-catalog
+  namespace: openshift-marketplace
+spec:
+  displayName: ibm-content-assistant-operator
+  publisher: IBM
+  sourceType: grpc
+  image: icr.io/cpopen/ibm-content-assistant-catalog@sha256:00b0193a750d1386d3f0df60b10b3b8f510ed0640f37e29899262860cd53127a

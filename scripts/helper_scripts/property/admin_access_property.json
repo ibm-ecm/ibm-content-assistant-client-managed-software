@@ -1,0 +1,8 @@
+{
+  "ENABLE_ADMIN_ACCESS_FOR_CAS_CLI": {
+    "value": false,
+    "comment": [
+      "Enable the IBM Content Assistant CLI"
+    ]
+  }
+}

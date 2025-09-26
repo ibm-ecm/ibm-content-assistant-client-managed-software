@@ -1,0 +1,50 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2024. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+
+# ####################################################
+# ##                  Namespace                     ##
+# ####################################################
+
+# The value can't be empty or any of the following:
+# - services
+# - default
+# - calico-system
+# - ibm-cert-store
+# - ibm-observe
+# - ibm-system
+# - ibm-odf-validation-webhook
+# - openshift-*
+# - kube-*
+
+NAMESPACE = "<Namespace>"
+
+# ####################################################
+# ##         Collect Configuration and Secrets       ##
+# ####################################################
+
+# Collect configuration and secrets - Valid values: [true; false]
+COLLECT_SENSITIVE_DATA = false
+
+# ####################################################
+# ##                 Components                     ##
+# ####################################################
+
+# In addition to the deployment artifacts, the IBM Content Assistant MustGather can collect components specific logs and configuration files.
+# This includes the following components:
+
+# - Component Logs
+# - Component Version
+# - Python Version
+
+# Components will only be collected if they are selected as part of your deployment.
+
+# GenAI Connector (GENAI_CONNECTOR)
+GENAI_CONNECTOR = false

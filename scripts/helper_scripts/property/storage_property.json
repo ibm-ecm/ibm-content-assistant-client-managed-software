@@ -1,0 +1,8 @@
+{
+  "SLOW_FILE_STORAGE_CLASSNAME": {
+    "value": "<Required>",
+    "comment": [
+      "Storage class name for slow file storage."
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2024. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+
+# Release Details
+DATE = "2025-09-03"
+RELEASE = "IBM Content Assistant 1.0.0"
+
+# Repository Details
+VERSION = "1.0.0"
+APP_VERSION = "1.0.0"
+
+# OLM Version Details
+CHANNEL = "v1.0"
+CSV = "v1.0.0"
+
+# Airgap Details
+CASE_VERSION = "1.0.0"
+CASE_NAME = "ibm-content-assistant"
+
+
+
+
+
+
