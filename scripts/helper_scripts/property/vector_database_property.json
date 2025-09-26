@@ -1,0 +1,66 @@
+{
+  "DATABASE_LABEL": {
+    "value": "VECTORDB",
+    "comment": [
+      "Vector Database label."
+    ]
+  },
+  "DATABASE_URL": {
+    "value": "<Required>",
+    "comment": [
+      "URL for the Vector database to be used by the IBM Content Assistant.",
+      "Example https://<VectorDatabaseURL>:9200"
+    ]
+  },
+  "DATABASE_AUTH_TYPE": {
+    "value": "<Required>",
+    "comment": [
+      "Authentication type for the Vector Database to be used.",
+      "There are two options available i.e BASICAUTH and OIDC.",
+      "BASICAUTH involves using a username/password combination for authentication.",
+      "OIDC is authentication based on a token received using a client ID and client secret."
+    ]
+  },
+  "DATABASE_SSL_ENABLED": {
+    "value": true,
+    "comment": [
+      "Enable SSL for Vector Database."
+    ]
+  },
+  "DATABASE_TYPE": {
+    "value": "opensearch",
+    "comment": [
+      "Vector Database Type."
+    ]
+  },
+  "DATABASE_USERNAME": {
+    "value": "<Required>",
+    "comment": [
+      "Username for the vector database"
+    ]
+  },
+  "DATABASE_USER_PASSWORD": {
+    "value": "<Required>",
+    "comment": [
+      "Password for the vector database"
+    ]
+  },
+  "DATABASE_OIDC_ENDPOINT": {
+    "value": "<Required>",
+    "comment": [
+      "OIDC token endpoint"
+    ]
+  },
+  "DATABASE_OIDC_CLIENT_ID": {
+    "value": "<Required>",
+    "comment": [
+      "OIDC Client ID"
+    ]
+  },
+  "DATABASE_OIDC_CLIENT_SECRET": {
+    "value": "<Required>",
+    "comment": [
+      "OIDC Client Secret"
+    ]
+  }
+}

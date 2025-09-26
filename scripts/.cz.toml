@@ -1,0 +1,14 @@
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "1.0.0"
+version_scheme = "semver"
+version = "1.0.0"
+
+version_files = [
+    ".cz.toml",
+    "prerequisites.py:__version__",
+    "cleandeployment.py:__version__",
+    "deployoperator.py:__version__",
+    "loadimages.py:__version__",
+    "mustgather.py:__version__",
+]

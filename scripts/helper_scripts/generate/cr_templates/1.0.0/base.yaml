@@ -1,0 +1,66 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2025 All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: cas.ibm.com/v1
+kind: CASCluster
+metadata:
+  name: casdeploy
+  labels:
+    app.kubernetes.io/instance: ibm-cas
+    app.kubernetes.io/managed-by: ibm-cas
+    app.kubernetes.io/name: ibm-cas
+    release: 1.0.0
+spec:
+  ## The version of the IBM Content Assistant operator that is being used.
+  appVersion: 1.0.0
+
+  ## MUST exist, used to accept ibm license; valid value only can be "true"
+  license:
+    accept:
+
+  ##################################################################
+  ## Shared configuration for all IBM Content Assistant components #
+  ##################################################################
+  shared_configuration:
+    ## Choose the licensing model for the IBM Content Assistant components.
+    ## Valid values are:
+    ## "fncm" for IBM FileNet Content Manager,
+    sc_cas_license_type: "fncm"
+
+    ## All IBM Content Assistant components must use/share the image_pull_secrets to pull images.
+    image_pull_secrets:
+      - ibm-entitlement-key
+
+    ## All IBM Content Assistant components must use/share the same docker image repository.  For example, if IBM Entitlement Registry is used, then
+    ## it should be "cp.icr.io".  Otherwise, it will be a private registry.
+    sc_image_repository: cp.icr.io
+
+    ## All IBM Content Assistant components must use/share the root_ca_secret in order for integration
+    root_ca_secret: cas-root-ca
+
+    ## Optional: You can specify a profile size for IBM Content Assistant - valid values are small,medium,large - default is small.
+    sc_deployment_profile_size: small
+
+    ## The platform to be deployed specified by the user.  Possible values are: OCP, ROKS, and other.
+    sc_deployment_platform: "<Required>"
+
+    ## The optional parameter to enable/disable the creation of sample network policy templates for Content Assistant components.  If the parameter is not defined, then the default value is "false".
+    ## Set this flag to "true" if you plan to have restricted network policies in Content Assistant namespaces so that the operators can create sample network policy templates for Content Assistant components.
+    ## Please refer to the Content Assistant documentation for more information about how to retrieve and apply the sample network policy templates.
+    sc_generate_sample_network_policies: false
+
+    ## If the root certificate authority (CA) key of the external service is not signed by the operator root CA key, provide the TLS certificate of
+    ## the external service to the component's truststore.
+    trusted_certificate_list: [ ]
+
+    ## Provide the storage class name for the file storage provisioner.
+    ## Operator will use the provided storage classes to provision required PVC volumes.
+    storage_configuration:
+      sc_slow_file_storage_classname: "<Required>"

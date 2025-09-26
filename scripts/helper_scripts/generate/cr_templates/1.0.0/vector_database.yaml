@@ -1,0 +1,21 @@
+#############################################
+######## Vector Database Configuration ######
+#############################################
+spec:
+  vector_database:
+    # The type of Vector Database to be used. Currently, only "opensearch" is supported.
+    vector_database_type: "opensearch"
+    # The secret name that contains the Vector Database credentials.
+    vector_database_secret_name: vector-database-secret
+    # Vector Database URL which should include host and port. Example https://<VectorDatabaseURL>:9200
+    vector_database_url: "<Required>"
+    # Vector Database ssl_enabled parameter is used to support database connection over SSL
+    vector_database_ssl_enabled: true
+    # Secret that contains the Vector Database certificate. Secret should be created with the key tls.crt
+    vector_database_certificate: vector-database-certificate-secret
+    # Vector Database Authentication type. 2 possible types -  Basic Authentication ( BASICAUTH ) or OIDC
+    vector_database_auth_type: BASICAUTH
+    ## Vector Database token endpoint required only if OIDC has been selected as the vector database authentication method
+    vector_database_oidc_token_endpoint: ""
+    ## Vector Database token endpoint certificate required only if OIDC has been selected as the vector database authentication method
+    vector_database_oidc_certificate: vector-database-oidc-certificate-secret

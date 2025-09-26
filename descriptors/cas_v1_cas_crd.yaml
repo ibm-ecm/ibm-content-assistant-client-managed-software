@@ -1,0 +1,674 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2025 All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+  name: casclusters.cas.ibm.com
+spec:
+  group: cas.ibm.com
+  names:
+    kind: CASCluster
+    listKind: CASClusterList
+    plural: casclusters
+    singular: cascluster
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: CASCluster is the Schema for the CASCluster API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: CASClusterpec defines the desired state of CASCluster
+            properties:
+              appVersion:
+                type: string
+              content_assistant_configuration:
+                description: Used to customizing the IBM Content Assistant
+                properties:
+                  arch:
+                    description: Architecture
+                    properties:
+                      amd64:
+                        type: string
+                    type: object
+                  auto_scaling:
+                    properties:
+                      enabled:
+                        description: Default value is true for if profile size is
+                          set to "extra-large"
+                        type: boolean
+                      max_replicas:
+                        format: int32
+                        type: integer
+                      min_replicas:
+                        format: int32
+                        type: integer
+                      target_cpu_average_utilization:
+                        format: int32
+                        type: integer
+                      target_memory_average_utilization:
+                        format: int32
+                        type: integer
+                    type: object
+                  content_assistant_production_settings:
+                    properties:
+                      cli:
+                        properties:
+                          access_token_expire_minutes:
+                            format: int32
+                            type: integer
+                          access_token_key_pem_secret:
+                            type: string
+                          access_token_role:
+                            type: string
+                          enabled:
+                            type: boolean
+                        type: object
+                      custom_configmap:
+                        items:
+                          properties:
+                            is_env:
+                              type: boolean
+                            name:
+                              type: string
+                            volume_path:
+                              type: string
+                          type: object
+                        type: array
+                      data_index:
+                        type: string
+                      data_index_prefix:
+                        type: string
+                      data_metric_index:
+                        type: string
+                      log_level:
+                        enum:
+                        - debug
+                        - info
+                        - warning
+                        - critical
+                        - error
+                        type: string
+                      startup:
+                        properties:
+                          limit_concurrency:
+                            format: int32
+                            type: integer
+                          limit_max_requests:
+                            format: int32
+                            type: integer
+                          timeout_keep_alive:
+                            format: int32
+                            type: integer
+                          workers:
+                            format: int32
+                            type: integer
+                        type: object
+                    type: object
+                  content_assistant_secret_name:
+                    type: string
+                  custom_annotations:
+                    additionalProperties:
+                      type: string
+                    description: CustomNodeSelector *[]corev1.NodeSelectorRequirement
+                      `json:"custom_node_selector_match_expression,omitempty"`
+                    type: object
+                  custom_labels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  datavolume:
+                    description: |-
+                      // +kubebuilder:validation:Required
+
+                      // +kubebuilder:validation:Enum:=true
+                      // +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Accept License",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
+                    properties:
+                      existing_pvc_for_content_assistant_logstore:
+                        properties:
+                          name:
+                            type: string
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                  image:
+                    properties:
+                      digest:
+                        type: string
+                      pull_policy:
+                        description: PullPolicy describes a policy for if/when to
+                          pull a container image
+                        type: string
+                      repository:
+                        type: string
+                      tag:
+                        type: string
+                    type: object
+                  license:
+                    type: string
+                  node_affinity:
+                    properties:
+                      custom_node_selector_match_expression:
+                        items:
+                          description: |-
+                            A node selector requirement is a selector that contains values, a key, and an operator
+                            that relates the key and values.
+                          properties:
+                            key:
+                              description: The label key that the selector applies
+                                to.
+                              type: string
+                            operator:
+                              description: |-
+                                Represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                              type: string
+                            values:
+                              description: |-
+                                An array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. If the operator is Gt or Lt, the values
+                                array must have a single element, which will be interpreted as an integer.
+                                This array is replaced during a strategic merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                    type: object
+                  probe:
+                    properties:
+                      liveness:
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                      startup:
+                        description: TimeoutSeconds *int32 `json:"timeout_seconds,omitempty"`
+                        properties:
+                          failure_threshold:
+                            format: int32
+                            type: integer
+                          initial_delay_seconds:
+                            format: int32
+                            type: integer
+                          period_seconds:
+                            format: int32
+                            type: integer
+                          timeout_seconds:
+                            format: int32
+                            type: integer
+                        type: object
+                    type: object
+                  replicas:
+                    format: int32
+                    type: integer
+                  resources:
+                    properties:
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        type: object
+                    type: object
+                  rolling_update:
+                    properties:
+                      max_surge:
+                        format: int32
+                        type: integer
+                      max_unavailable:
+                        type: string
+                    type: object
+                  security_context:
+                    properties:
+                      fs_groupchangepolicy:
+                        description: |-
+                          PodFSGroupChangePolicy holds policies that will be used for applying fsGroup to a volume
+                          when volume is mounted.
+                        type: string
+                      selinux_options:
+                        description: SELinuxOptions are the labels to be applied to
+                          the container
+                        properties:
+                          level:
+                            description: Level is SELinux level label that applies
+                              to the container.
+                            type: string
+                          role:
+                            description: Role is a SELinux role label that applies
+                              to the container.
+                            type: string
+                          type:
+                            description: Type is a SELinux type label that applies
+                              to the container.
+                            type: string
+                          user:
+                            description: User is a SELinux user label that applies
+                              to the container.
+                            type: string
+                        type: object
+                      supplemental_group:
+                        items:
+                          format: int64
+                          type: integer
+                        type: array
+                    type: object
+                type: object
+              license:
+                description: Accept the product license for IBM Content Assistant
+                  License
+                properties:
+                  accept:
+                    description: |-
+                      MUST exist, used to accept license, valid value only can be "true".
+                      License information: https://ibm.biz/CAS_License_1_0_0
+                    enum:
+                    - true
+                    type: boolean
+                required:
+                - accept
+                type: object
+              shared_configuration:
+                description: Shared configuration to be used with IBM Content Assistant
+                properties:
+                  enable_fips:
+                    type: boolean
+                  external_tls_certificate_secret:
+                    description: |-
+                      Shared secret containing a wildcard certificate (and concatenated signers) to be used by all routes, unless overwritten for a specific component route.
+                      If this is not defined, all external routes will be signed with root_ca_secret.
+                    type: string
+                  image_pull_secrets:
+                    description: All CP4A components must use/share the image_pull_secrets
+                      to pull images.
+                    items:
+                      type: string
+                    type: array
+                  root_ca_secret:
+                    description: All CP4A components must use/share the root_ca_secret
+                      in order for integration.
+                    type: string
+                  sc_cas_license_type:
+                    description: |-
+                      This parameter to specify the license type for IBM Content Assistant - Client Managed Software
+                      The possible values are fncm. This parameter is required.
+                    enum:
+                    - fncm
+                    type: string
+                  sc_deployment_hostname_suffix:
+                    type: string
+                  sc_deployment_platform:
+                    description: |2-
+                       The platform to be deployed specified by the user. Possible values are: OCP, ROKS and other.  This is normally populated by the User script
+                       based on input from the user.
+                    enum:
+                    - OCP
+                    - ROKS
+                    - other
+                    type: string
+                  sc_deployment_profile_size:
+                    description: 'Optional: You can specify a profile size for CloudPak
+                      - valid values are small,medium,large,"" ("" value means the
+                      default will be used) - default is small.'
+                    enum:
+                    - small
+                    - medium
+                    - large
+                    - ""
+                    type: string
+                  sc_egress_configuration:
+                    properties:
+                      sc_api_namespace:
+                        items:
+                          type: string
+                        type: array
+                      sc_api_port:
+                        items:
+                          format: int32
+                          type: integer
+                        type: array
+                      sc_dns_namespace:
+                        items:
+                          type: string
+                        type: array
+                      sc_dns_port:
+                        items:
+                          format: int32
+                          type: integer
+                        type: array
+                      sc_restricted_internet_access:
+                        type: boolean
+                    type: object
+                  sc_fs_group:
+                    format: int64
+                    type: integer
+                  sc_generate_sample_network_policies:
+                    description: Generate default network policies templates
+                    type: boolean
+                  sc_image_repository:
+                    description: |-
+                      All components must use/share the same docker image repository. For example, if IBM Entitled Registry is used, then
+                      it should be "cp.icr.io". Otherwise, it will be a local docker registry.
+                    type: string
+                  sc_image_tag:
+                    type: string
+                  sc_ingress_annotations:
+                    additionalProperties:
+                      type: string
+                    description: In case any custom annotation is needed for the environment
+                      provide below.
+                    type: object
+                  sc_ingress_enable:
+                    description: For ROKS and CNCF, this is used to enable the creation
+                      of ingresses. The default value is "false".
+                    type: boolean
+                  sc_ingress_tls_secret_name:
+                    description: For ROKS and CNCF Ingress, provide TLS secret name
+                      for Ingress controller.
+                    type: string
+                  sc_is_multiple_az:
+                    description: 'INTERNAL PROPERTY: this property should not be used
+                      by customer'
+                    type: boolean
+                  sc_run_as_user:
+                    description: |-
+                      Specify the RunAsUser for the security context of the pod. This is usually a numeric value that corresponds to a user ID.
+                      For non-OCP (e.g., CNCF platforms such as AWS, GKE, etc), this parameter is optional. It is not supported on OCP and ROKS.
+                    format: int64
+                    type: integer
+                  sc_seccomp_profile:
+                    properties:
+                      localhost_profile:
+                        type: string
+                      type:
+                        description: SeccompProfileType defines the supported seccomp
+                          profile types.
+                        type: string
+                    type: object
+                  sc_service_ip_families:
+                    items:
+                      description: |-
+                        IPFamily represents the IP Family (IPv4 or IPv6). This type is used
+                        to express the family of an IP expressed by a type (e.g. service.spec.ipFamilies).
+                      type: string
+                    type: array
+                  sc_service_ip_family_policy:
+                    description: IPFamilyPolicy represents the dual-stack-ness requested
+                      or required by a Service
+                    type: string
+                  sc_service_type:
+                    description: Service type to support CNCF Ingress creation, possible
+                      values are ClusterIP, NodePort
+                    type: string
+                  show_sensitive_logs:
+                    type: boolean
+                  storage_configuration:
+                    description: Provide the storage class name for the file storage
+                      provisioner. Operator will use the provided storage classes
+                      to provision required PVC volumes.
+                    properties:
+                      sc_slow_file_storage_classname:
+                        description: Provide the storage class name for the file storage
+                          provisioner. Operator will use the provided storage classes
+                          to provision required PVC volumes.
+                        type: string
+                    required:
+                    - sc_slow_file_storage_classname
+                    type: object
+                  trusted_certificate_list:
+                    description: |-
+                      If the root certificate authority (CA) key of the external service is not signed by the operator root CA key,
+                      provide the TLS certificate of the external service to the component's truststore.
+                    items:
+                      type: string
+                    type: array
+                required:
+                - sc_cas_license_type
+                - storage_configuration
+                type: object
+              vector_database:
+                description: Content Assistant requires a vector database to connect
+                  to for indexing data.
+                properties:
+                  vector_database_auth_type:
+                    description: Vector Database Authentication type. 2 possible types
+                      -  Basic Authentication ( BASICAUTH ) or OIDC
+                    type: string
+                  vector_database_certificate:
+                    description: Secret that contains the Vector Database certificate.
+                      Secret should be created with the key tls.crt
+                    type: string
+                  vector_database_max_pool_size:
+                    description: Tunning parameter connection to your vector database
+                    format: int32
+                    type: integer
+                  vector_database_max_retries:
+                    description: Vector Database tunning parameter
+                    format: int32
+                    type: integer
+                  vector_database_oidc_certificate:
+                    description: Secret that contains the Vector Database OIDC Certificate.
+                      Secret should be created with the key tls.crt
+                    type: string
+                  vector_database_oidc_lock_acq_timeout_sec:
+                    description: Vector Database OIDC tunning parameter
+                    format: int32
+                    type: integer
+                  vector_database_oidc_scope:
+                    description: Vector Database OIDC tunning parameter
+                    type: string
+                  vector_database_oidc_token_endpoint:
+                    description: Vector Database token endpoint required only if OIDC
+                      has been selected as the vector database authentication method
+                    type: string
+                  vector_database_oidc_token_expiry_buffer_sec:
+                    description: Vector Database OIDC tunning parameter
+                    format: int32
+                    type: integer
+                  vector_database_oidc_verify_certs:
+                    description: Vector Database OIDC tunning parameter
+                    type: boolean
+                  vector_database_retry_on_timeout:
+                    description: Vector Database tunning parameter
+                    type: boolean
+                  vector_database_secret_name:
+                    description: The secret name that contains the Vector Database
+                      credentials.
+                    type: string
+                  vector_database_ssl_assert_hostname:
+                    description: Tunning parameter connection to your vector database
+                    type: boolean
+                  vector_database_ssl_enabled:
+                    description: Vector Database ssl enabled parameter is used to
+                      support database connection over SSL
+                    enum:
+                    - true
+                    - false
+                    type: boolean
+                  vector_database_ssl_show_warn:
+                    description: Vector Database tunning parameter
+                    enum:
+                    - true
+                    - false
+                    type: boolean
+                  vector_database_timeout:
+                    description: Vector Database tunning parameter
+                    format: int32
+                    type: integer
+                  vector_database_type:
+                    description: The type of Vector Database to be used. Currently,
+                      only "opensearch" is supported.
+                    enum:
+                    - opensearch
+                    type: string
+                  vector_database_url:
+                    description: Vector Database URL which should include host and
+                      port. Example https://<VectorDatabaseURL>:9200
+                    type: string
+                  vector_database_verify_certs:
+                    description: Tunning parameter to your vector database
+                    enum:
+                    - true
+                    - false
+                    type: boolean
+                required:
+                - vector_database_url
+                type: object
+            required:
+            - appVersion
+            - license
+            - vector_database
+            type: object
+          status:
+            description: Content Assistant Service Status defines the observed state
+              of CASCluster
+            properties:
+              conditions:
+                description: 'Important: Run "make" to regenerate code after modifying
+                  this file'
+                items:
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition moved from one state to
+                        another
+                      format: date-time
+                      type: string
+                    message:
+                      description: Human-readable message with details about the last
+                        transition
+                      type: string
+                    reason:
+                      description: One-word, camelCase reason for the last status
+                        transition
+                      type: string
+                    status:
+                      description: Status of the condition - always one of True, False,
+                        or Unknown
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: The condition type
+                      type: string
+                  required:
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              endpoints:
+                items:
+                  properties:
+                    name:
+                      type: string
+                    scope:
+                      type: string
+                    type:
+                      type: string
+                    uri:
+                      type: string
+                  required:
+                  - name
+                  - scope
+                  - type
+                  - uri
+                  type: object
+                type: array
+              observedGeneration:
+                description: |-
+                  observedGeneration represents the .metadata.generation that the status was set based upon.
+                  It is the most recent generation managed by the operator.
+                format: int64
+                minimum: 0
+                type: integer
+              operatorInfos:
+                items:
+                  properties:
+                    name:
+                      type: string
+                    value:
+                      type: string
+                  required:
+                  - name
+                  - value
+                  type: object
+                type: array
+              versions:
+                items:
+                  properties:
+                    name:
+                      type: string
+                    version:
+                      type: string
+                  required:
+                  - name
+                  - version
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

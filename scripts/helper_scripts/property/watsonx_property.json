@@ -1,0 +1,20 @@
+{
+  "AI_PROVIDER_LABEL": {
+    "value": "AI_Provider",
+    "comment": [
+      "Label of the AI Provider"
+    ]
+  },
+  "API_KEY": {
+    "value": "<Required>",
+    "comment": [
+      "Watson API Key"
+    ]
+  },
+  "SPACE_ID": {
+    "value": "<Required>",
+    "comment": [
+      "Space ID"
+    ]
+  }
+}

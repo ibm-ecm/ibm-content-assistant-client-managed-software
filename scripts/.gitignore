@@ -1,0 +1,30 @@
+.idea/
+.venv*
+
+# Ignore Log Files
+*.log
+
+# Ignore build files
+__pycache__/
+*.pyc
+
+# Ignore OS files
+.DS_Store
+
+# Ignore tmp files
+**/tmp/*
+
+# MustGather logs
+MustGather*.tar.gz
+MustGather*.zip
+.ibm-pak*
+.tmp*
+
+# Backups & Generated files
+backups
+imageDetails
+generatedFiles*
+propertyFile*
+migration
+airgapDetails
+FNCMUpgrade

@@ -1,0 +1,76 @@
+###############################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2024. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+
+# ####################################################
+# ##                  Namespace                     ##
+# ####################################################
+
+# The value can't be empty or any of the following:
+# - services
+# - default
+# - calico-system
+# - ibm-cert-store
+# - ibm-observe
+# - ibm-system
+# - ibm-odf-validation-webhook
+# - openshift-*
+# - kube-*
+
+NAMESPACE = "<Namespace>"
+
+# ####################################################
+# ##              License and Platform              ##
+# ####################################################
+
+# Choose the licensing model for the Product you are installing - Valid values: ['FNCM']
+LICENSE = "FNCM"
+
+# Platform of choice - Valid values: [1; 2; 3]
+# 1. OCP
+# 2. ROKS
+# 3. CNCF
+PLATFORM = 1
+
+# Do you want to configure ingress - Valid values: [true; false]
+# This value will be ignored for platforms other than 'CNCF'
+INGRESS = false
+
+# Do you want the operator to generate network policies templates for the deployment - Valid values: [true; false]
+GENERATE_NETWORK_POLICIES = false
+
+# ########################################################
+# ##          IBM Content Assistant Properties          ##
+# ########################################################
+
+# Number of AI providers to be used - Valid values: [1]
+AI_PROVIDER_COUNT = 1
+
+# ####################################################
+# ##           Vector Database Properties           ##
+# ####################################################
+
+[VECTORDB]
+# Provide the database type from your infrastructure. - Valid values: [1]
+# 1. Opensearch
+DATABASE_TYPE = 1
+
+# Authentication type for the Vector Database to be used. [1; 2]
+# 1. BASICAUTH
+# 2. OIDC
+## BASICAUTH involves using a username/password combination for authentication.
+## OIDC is authentication based on a token received using a client ID and client secret.
+DATABASE_AUTH_TYPE = 2
+
+# Enabled SSL for the Vector Database - Valid values: [true; false]
+# If OIDC is chosen as the authentication type, the OIDC endpoint will be use SSL.
+DATABASE_SSL_ENABLE = true
+
+

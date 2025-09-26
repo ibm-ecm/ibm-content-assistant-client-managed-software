@@ -1,0 +1,15 @@
+###################################################
+######## IBM Content Assistant Configuration ######
+###################################################
+spec:
+  content_assistant_configuration:
+    content_assistant_production_settings:
+      # This section is used to configure IBM Content Assistant CLI enablement and access token settings.
+      cli:
+        enabled: true
+        # Validity of the access token
+        access_token_expire_minutes: 60
+        # Admin Role name associated with the access token
+        access_token_role: ibm-genai-document-manager
+        # Secret name that contains the private key and passphrase
+        access_token_key_pem_secret: ibm-content-assistant-admin-key-secret
