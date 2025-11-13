@@ -1,6 +1,6 @@
 {
   "AI_PROVIDER_LABEL": {
-    "value": "WATSONX",
+    "value": "WATSONXPROD",
     "comment": [
       "Label of the AI Provider"
     ]
