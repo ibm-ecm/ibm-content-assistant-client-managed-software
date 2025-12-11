@@ -19,11 +19,8 @@ import shlex
 import shutil
 import subprocess
 import time
-import ssl
 from ipaddress import ip_address, IPv4Address, IPv6Address
 from urllib.parse import urlparse
-from requests import Session
-from requests.adapters import HTTPAdapter
 
 import jinja2
 import requests
@@ -32,6 +29,8 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from requests import Session
+from requests.adapters import HTTPAdapter
 from rich import print
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -111,9 +110,10 @@ class Validate:
         self._kube = k.KubernetesUtilities(logger)
         self._pvc_size = pvc_size
 
-        # self.missing_tools = self.check_env_util()
-
         self.is_validated = {}
+
+        # Collect Provider API Count
+        self._provider_api_count = self._content_assistant_prop.get("_ai_providers_ids", 0)
 
         # Setting for Truststore
         self.__create_tmp_folder()
@@ -276,6 +276,166 @@ class Validate:
                 f"Exception from validate.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
 
         return output_path
+
+    # Function to query IBM Cloud IAM API, returns bearer token
+    def query_iam_api(self, api_key, progress):
+        """ Query IBM Cloud IAM  API to verify connectivity """
+        try:
+
+            url = "https://iam.cloud.ibm.com/identity/token"
+
+            progress.log()
+            progress.log(f"Querying IBM Cloud IM API")
+
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+
+            # Encode the payload
+            payload = f'grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey={api_key}'
+
+
+            response = requests.request("POST", url, headers=headers, data=payload, timeout=5)
+
+            if response.status_code == 200 and "access_token" in response.json():
+                progress.log()
+                progress.log(f"Successfully retrieved bearer token from IBM Cloud IAM API")
+                return response.json()["access_token"], True
+            else:
+                progress.log()
+                progress.log(f"Failed to retrieve bearer token from IBM Cloud IAM API")
+                return response.json(), False
+
+        except Exception as e:
+            progress.log()
+            progress.log(f"Exception occurred while querying IBM Cloud IAM API: {str(e)}")
+            self._logger.exception(
+                f"Exception from validate.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
+            return None, False
+
+
+    # Function to test spaceID with bearer token
+    def test_space_id(self, bearer_token, space_id, progress):
+        """ Test Space ID with bearer token """
+        try:
+
+            url = f"https://api.dataplatform.cloud.ibm.com/v2/spaces/{space_id}"
+
+            progress.log()
+            progress.log(f"Validating Space ID: {space_id}")
+
+            headers = {
+                'Authorization': f'Bearer {bearer_token}',
+                'Content-Type': 'application/json',
+            }
+
+            response = requests.request("GET", url, headers=headers, timeout=5)
+
+
+            if response.status_code == 200:
+                progress.log()
+                progress.log(f"Space ID: {space_id} is valid.")
+                return True
+            else:
+                progress.log()
+                progress.log(f"Space ID: {space_id} is invalid. Response Code: {response.status_code}")
+                return False
+
+        except Exception as e:
+            progress.log()
+            progress.log(f"Exception occurred while testing Space ID: {str(e)}")
+            self._logger.exception(
+                f"Exception from validate.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
+            return False
+
+    # Function to verify all defined provider API and space ID
+    def validate_ai_provider_apis(self, task, progress):
+        """ Verify Provider API and Space ID """
+        try:
+
+
+            progress.log(Panel.fit(Text("Verifying AI Provider API Keys and Space IDs"), style="bold cyan"))
+            progress.log()
+
+            provider_api_passed = []
+
+            for ai_provider in self._content_assistant_prop["_ai_providers_ids"]:
+                # Tracker for API and Space ID verification
+
+                provider_name = self._content_assistant_prop[ai_provider]["AI_PROVIDER_LABEL"]
+                provider_api_key = self._content_assistant_prop[ai_provider]["API_KEY"]
+                provider_space_id = self._content_assistant_prop[ai_provider]["SPACE_ID"]
+
+                progress.log()
+                progress.log(f"Verifying API Key and Space ID for {provider_name}...")
+
+                if not provider_api_key or not provider_space_id:
+                    progress.log()
+                    progress.log(Panel.fit(
+                        Text(f"API Key or Space ID is missing for {provider_name}. Please check the configuration."),
+                             style="bold red"))
+                    self._logger.info(f"API Key or Space ID is missing for {provider_name}.")
+                    provider_api_passed.append(False)
+                    self.is_validated[ai_provider] = False
+                    progress.advance(task)
+                    continue
+
+
+                # Query IAM API to get bearer token
+                bearer_token, iam_success = self.query_iam_api(provider_api_key, progress)
+
+                if not iam_success:
+                    progress.log()
+                    progress.log(Panel.fit(
+                        Text(f"Failed to verify API Key for {provider_name}. Please check the configuration."),
+                             style="bold red"))
+                    self._logger.info(f"Failed to verify API Key for {provider_name}.")
+                    provider_api_passed.append(False)
+                    self.is_validated[ai_provider] = False
+                    progress.advance(task)
+                    continue
+
+                # Test Space ID with bearer token
+                space_id_valid = self.test_space_id(bearer_token, provider_space_id, progress)
+
+                if not space_id_valid:
+                    progress.log()
+                    progress.log(Panel.fit(
+                        Text(f"Space ID is invalid for {provider_name}. Please check the configuration."),
+                             style="bold red"))
+                    self._logger.info(f"Space ID is invalid for {provider_name}.")
+                    provider_api_passed.append(False)
+                    self.is_validated[ai_provider] = False
+                    progress.advance(task)
+                    continue
+
+                provider_api_passed.append(True)
+                self.is_validated[ai_provider] = True
+                progress.log()
+                progress.log(Panel.fit(Text(f"API Key and Space ID verified successfully for Provider: {provider_name}"), style="bold green"))
+                progress.advance(task)
+
+
+            if all(provider_api_passed):
+                progress.log()
+                progress.log(Panel.fit(Text("All Provider API Keys and Space IDs verified successfully!"), style="bold green"))
+                self._logger.info("All Provider API Keys and Space IDs verified successfully!")
+                return True
+
+            else:
+                progress.log()
+                progress.log(Panel.fit(Text("Some Provider API Keys or Space IDs are missing or invalid. Please check the configuration."), style="bold red"))
+                self._logger.info("Some Provider API Keys or Space IDs are missing or invalid.")
+                return False
+
+        except Exception as e:
+            progress.log()
+            progress.log(Panel.fit(
+                Text(f"An error occurred while verifying provider API keys and space IDs: {str(e)}"),
+                     style="bold red"))
+            self._logger.exception(
+                f"Exception from validate.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
+            return False
 
     # Converts .key files to .der in PKCS8 format
     def __key_to_der_PKCS8(self, input_key_path, output_path):

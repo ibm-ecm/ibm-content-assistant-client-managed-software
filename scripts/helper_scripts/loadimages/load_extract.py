@@ -113,6 +113,14 @@ class LoadExtract:
         self._airgap_vars = {}
 
     @property
+    def casepackage_version(self):
+        return self._casepackage_version
+
+    @casepackage_version.setter
+    def casepackage_version(self, value):
+        self._casepackage_version = value
+
+    @property
     def ibmpak_home(self):
         return self._ibmpak_home
 
@@ -233,34 +241,36 @@ class LoadExtract:
     # Function to parse caseVersions
     def __parse_case_versions(self):
         case_versions = self._case_versions
-        case_versions_dict = {}
+        self._logger.info(f"Parsing CASE Package index.yaml")
+        self._logger.info(f"Available CASE Package Versions: {case_versions}")
+        case_versions_list = []
 
-        lowest_version = version.parse("1.0.0")
+        case_version_list = case_versions['versions'].keys()
 
-        # Loop through the caseVersions
-        for key, data in case_versions['versions'].items():
-            # Get the appVersion
-            app_version = data["appVersion"].split("-")[0]
+        # lowest_version = version.parse("1.0.0")
+        #
+        # # Loop through the caseVersions
+        # for key, data in case_versions['versions'].items():
+        #     # Check if the appVersion is greater or equal 5.5.9
+        #     if version.parse(self._cas_version) >= lowest_version:
+        #         # Add the appVersion to the caseVersionsDict
+        #         if self._cas_version not in case_versions_dict:
+        #             case_versions_dict[self._cas_version] = key
+        #         else:
+        #             # Check if the casePackageVersion is greater than the current version
+        #             if version.parse(key) > version.parse(case_versions_dict[self._cas_version]):
+        #                 case_versions_dict[self._cas_version] = key
 
-            # Check if the appVersion is greater or equal 5.5.9
-            if version.parse(app_version) >= lowest_version:
-                # Add the appVersion to the caseVersionsDict
-                if app_version not in case_versions_dict:
-                    case_versions_dict[app_version] = key
-                else:
-                    # Check if the casePackageVersion is greater than the current version
-                    if version.parse(key) > version.parse(case_versions_dict[app_version]):
-                        case_versions_dict[app_version] = key
 
-        self._case_versions_parsed = case_versions_dict
-        return case_versions_dict
+        self._case_versions_parsed = case_version_list
+        return case_version_list
 
     # Function to select the casePackageVersion
     def select_case_package_version(self):
         print(Panel.fit("CASE Package Versions"))
 
         num_version = len(self._case_versions_parsed)
-        choices = list(self._case_versions_parsed.keys())
+        choices = self._case_versions_parsed
 
         if self._silent_mode:
             print()
@@ -270,7 +280,7 @@ class LoadExtract:
             print()
             print("Select a CASE Package Version")
             for i, choice in enumerate(choices, 1):
-                print(f"{i}. {self._case_versions_parsed[choice]} ({choice})")
+                print(f"{i}. {choice})")
 
             result = choices.index(self._cas_version) + 1
 
@@ -290,13 +300,13 @@ class LoadExtract:
                 print()
                 print("Select a CASE Package Version")
                 for i, choice in enumerate(choices, 1):
-                    print(f"{i}. {self._case_versions_parsed[choice]} ({choice})")
+                    print(f"{i}. {choice})")
 
                 result = IntPrompt.ask(f'Enter a valid option [[b]1[/b] and [b]{num_version}[/b]]',
                                        default=choices.index(self._cas_version) + 1)
 
                 if 1 <= result <= num_version:
-                    self._casepackage_version = self._case_versions_parsed[choices[result - 1]]
+                    self._casepackage_version = self._case_versions_parsed[result]
                     break
 
                 print(f"\n[prompt.invalid]Number must be between [[b]1[/b] and [b]{num_version}[/b]]")
@@ -489,6 +499,7 @@ class LoadExtract:
         try:
             env_vars = self._airgap_vars.copy()
             env_vars["PATH"] = os.environ["PATH"]
+            env_vars["HOME"] = os.environ["HOME"]
 
             case_name = env_vars["CASE_NAME"]
             target_registry = env_vars["TARGET_REGISTRY"]
@@ -539,6 +550,7 @@ class LoadExtract:
         try:
 
             env_vars = self._airgap_vars.copy()
+            env_vars["HOME"] = os.environ["HOME"]
 
             file_path = os.path.join(env_vars['IBMPAK_HOME'], '.ibm-pak', 'data', 'mirror', env_vars['CASE_NAME'],
                                           env_vars['CASE_VERSION'], 'image-set-config.yaml')
@@ -583,6 +595,7 @@ class LoadExtract:
 
                 if not self._all_channel:
                     # Calculate channel based on CAS Version
+
                     current_channel = self.AirgapChannel.Channel(self._cas_version).name
                     choices_set.add(current_channel)
                 else:
@@ -654,6 +667,7 @@ class LoadExtract:
             case_name = env_vars["CASE_NAME"]
             case_version = env_vars["CASE_VERSION"]
             pak_home = env_vars["IBMPAK_HOME"]
+            env_vars["HOME"] = os.environ["HOME"]
 
             image_mirror_policy_file = os.path.join(pak_home, '.ibm-pak', 'data', 'mirror', case_name, case_version, 'image-content-source-policy.yaml')
 
@@ -682,6 +696,7 @@ class LoadExtract:
 
             env_vars = self._airgap_vars.copy()
             env_vars["PATH"] = os.environ["PATH"]
+            env_vars["HOME"] = os.environ["HOME"]
 
             case_name = env_vars["CASE_NAME"]
             target_registry = env_vars["TARGET_REGISTRY"]
@@ -706,8 +721,12 @@ class LoadExtract:
             error = process.stderr.read().decode('utf-8')
             error_split = error.split("msg=")
             error_msg = error_split[-1]
+            status_code = process.wait()
 
-            if error != '':
+            self._logger.info(f"Image Mirror process completed with error: {error_msg}")
+            self._logger.info(f"Image Mirror process completed with status code: {status_code}")
+
+            if status_code != 0:
                 progress.log(Text(error_msg, style="bold red"))
                 progress.log(Text(f"Error mirroring images to private registry", style="bold red"))
                 progress.log()
@@ -722,12 +741,15 @@ class LoadExtract:
             return True
 
         except Exception as e:
-            (f"Error: {e}")
+            self._logger.info(f"Error: {e}")
+            progress.update(task, total=1)
+            progress.update(task, advance=1)
             return False
 
     # Function to select channel
     def collect_image_channels(self):
         env_vars = self._airgap_vars.copy()
+        env_vars["HOME"] = os.environ["HOME"]
 
         image_set_yaml = os.path.join(env_vars['IBMPAK_HOME'], '.ibm-pak', 'data', 'mirror', env_vars['CASE_NAME'],
                                       env_vars['CASE_VERSION'], 'image-set-config.yaml')
@@ -750,6 +772,7 @@ class LoadExtract:
         try:
             env_vars = self._airgap_vars.copy()
             env_vars["PATH"] = os.environ["PATH"]
+            env_vars["HOME"] = os.environ["HOME"]
 
             command = "oc ibm-pak config mirror-tools --enabled oc-mirror"
 
@@ -776,6 +799,7 @@ class LoadExtract:
 
             env_vars = self._airgap_vars.copy()
             env_vars["PATH"] = os.environ["PATH"]
+            env_vars["HOME"] = os.environ["HOME"]
 
             command1 = "oc ibm-pak config repo 'IBM Cloud-Pak OCI registry' -r oci:cp.icr.io/cpopen --enable"
 

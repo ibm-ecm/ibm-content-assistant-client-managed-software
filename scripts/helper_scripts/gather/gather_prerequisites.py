@@ -10,13 +10,14 @@
 ###############################################################################
 
 from enum import Enum
+from urllib.parse import urlparse
+
+import requests
 from rich import print
 from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.text import Text
-from urllib.parse import urlparse
-from kubernetes import client, config
-import requests
+
 from ..utilities.kubernetes_utilites import KubernetesUtilities
 
 requests.packages.urllib3.disable_warnings()
@@ -221,8 +222,12 @@ class GatherPrereqOptions:
         Enum to represent the platform type
         '''
         OCP = 1
-        ROKS = 2
-        other = 3
+        other = 2
+
+    class LicenseModel(Enum):
+        fncm = 1
+        cp4ba = 2
+
 
     def __init__(self, logger, console):
 
@@ -244,11 +249,7 @@ class GatherPrereqOptions:
         self._namespace = None
         self._current_namespace = None
         self._script_type = "gather"
-
-        config.load_kube_config()
-        # Initialize Kubernetes client
-        self._core_api_instance = client.CoreV1Api()
-        self._k = KubernetesUtilities()
+        self._k = KubernetesUtilities(self._logger)
 
     # Create a function to gather all deployment options from the user
     @property
@@ -346,20 +347,14 @@ class GatherPrereqOptions:
                 print(Panel.fit("Namespace"))
                 print()
                 try:
-                    current_context = config.list_kube_config_contexts()[1]
-
-                    # Extract namespace from the current context
-                    if current_context:
-                        if "context" in current_context.keys():
-                            if "namespace" in current_context["context"].keys():
-                                self._current_namespace = current_context["context"]["namespace"]
-                    else:
-                        self._current_namespace = None
+                    self._current_namespace = self._k.current_namespace
+                    self._logger.info(f"Current namespace from kubeconfig: {self._current_namespace}")
                 except Exception as e:
                     self._current_namespace = None
+                    self._logger.info("Gathering namespace information failed")
 
 
-            if self._platform in ["OCP", "ROKS"]:
+            if self._platform in ["OCP"]:
                 invalid_namespaces = ["services", "default", "calico-system", "ibm-cert-store", "ibm-observe",
                                       "ibm-system", "ibm-odf-validation-webhook"]
                 invalid_namespace_to_start_with = ["openshift-", "kube-"]
@@ -457,6 +452,18 @@ class GatherPrereqOptions:
                     else:
                         exit(0)
 
+
+                # Check if the answer has any uppercase letters
+                if any(char.isupper() for char in answer):
+                    print()
+                    print("[prompt.invalid]Namespace cannot contain uppercase letters. Please try again.")
+                    print()
+                    self._logger.debug(f"Namespace cannot contain uppercase letters. Please try again.")
+                    if namespace is None:
+                        continue
+                    else:
+                        exit(0)
+
                 # Check if namespace has an underscore
                 if "_" in answer:
                     print()
@@ -503,7 +510,7 @@ class GatherPrereqOptions:
             print()
             print("The IBM Content Assistant CLI provides a command line interface to manage and configure IBM Content Assistant.")
             print("By default, the CLI is not accessible. Enabling CLI Admin Access allows you to use the CLI for administrative tasks.")
-            print("If enabled, the CLI can be accessed via a route on OCP/ROKS or a Ingress service on CNCF.")
+            print("If enabled, the CLI can be accessed via a route on OCP or a Ingress service on CNCF.")
             print("A private key and passphrase will be generated for secure access to the CLI.")
             print()
             result = Confirm.ask("Do you want to enable IBM Content Assistant CLI?")
@@ -614,22 +621,45 @@ class GatherPrereqOptions:
             print(Panel.fit("License and Version"))
             print()
 
+            version = version_data.get("VERSION", '1.0.0' )
+            self._cas_version = version
+
+            print(Panel.fit(Text(f"Detected IBM Content Assistant Version: {version}"), style="bold cyan"))
+            print()
+
+            while True:
+                print()
+                print("Select a License Type")
+                print("1. FNCM")
+                print("2. CP4BA")
+                result = IntPrompt.ask('Enter a valid option [[b]1[/b] and [b]2[/b]]')
+
+                if 1 <= result <= 2:
+                    self._license_model = self.LicenseModel(result).name
+                    break
+
+                print("\n[prompt.invalid]Number must be between [[b]1[/b] and [b]2[/b]]")
+
             cas_license_url = Text("https://ibm.biz/CAS_License_1_0_0",
                                     style="link hhttps://ibm.biz/CAS_License_1_0_0")
             cas_notices_url = Text("https://ibm.biz/CAS_Notices_1_0_0",
                                    style="link https://ibm.biz/CAS_Notices_1_0_0")
+            cp4ba_license_url = Text("https://ibm.biz/cp4ba_license_2501",
+                                     style="link https://ibm.biz/cp4ba_license_2501")
+            cp4ba_reserved_license_url = Text("https://ibm.biz/cp4ba-reserved-license-2501",
+                                                style="link https://ibm.biz/cp4ba-reserved-license-2501")
 
-            version = version_data.get("VERSION", '1.0.0' )
-            self._cas_version = version
+            license_message = (f"IMPORTANT: Review the license information for the product bundle you are deploying.\n\n" 
+                              f"IBM Content Assistant Client Managed Software license information here: {cas_license_url}\n" 
+                              f"IBM Software Notices here: {cas_notices_url}")
 
-            print(Panel.fit(Text(f"Detected IBM Content Assistant Version: {version}", style="bold cyan")))
+
+            if self._license_model.lower() == "cp4ba":
+                license_message += (f"\nIBM Cloud Pak for Business Automation license information here: {cp4ba_license_url}\n"
+                                    f"IBM Cloud Pak for Business Automation Reserved license here: {cp4ba_reserved_license_url}")
+
             print()
-
-            print(Panel.fit(
-                f"IMPORTANT: Review the license information for the product bundle you are deploying.\n\n"
-                f"IBM Content Assistant Client Managed Software license information here: {cas_license_url}\n"
-                f"IBM Software Notices here: {cas_notices_url}"))
-
+            print(Panel.fit(Text(license_message), style="bold cyan"))
             print()
 
             self._accept_license = Confirm.ask("Do you accept the International Program License?")
@@ -652,15 +682,14 @@ class GatherPrereqOptions:
                 print()
                 print("Select a Platform Type")
                 print("1. OCP")
-                print("2. ROKS")
-                print("3. CNCF")
-                result = IntPrompt.ask('Enter a valid option [[b]1[/b] and [b]3[/b]]')
+                print("2. CNCF")
+                result = IntPrompt.ask('Enter a valid option [[b]1[/b] and [b]2[/b]]')
 
                 if 1 <= result <= 3:
                     self._platform = self.Platform(result).name
                     break
 
-                print("\n[prompt.invalid]Number must be between [[b]1[/b] and [b]3[/b]]")
+                print("\n[prompt.invalid]Number must be between [[b]1[/b] and [b]2[/b]]")
 
             if self._platform == "other":
                 print()

@@ -59,7 +59,7 @@ class Deploy:
         else:
             self._catalog_namespace = "openshift-marketplace"
 
-        if self._setup.platform.lower() == "ocp" or self._setup.platform.lower() == "roks":
+        if self._setup.platform.lower() == "ocp":
             self._deployment_type = "olm"
             self._task_numbers = {
                 "ClusterSetup": 4,
@@ -244,7 +244,7 @@ class Deploy:
         except Exception as e:
             progress.log(Text(f"Error occurred while applying the resources: {e}", style="bold red"))
 
-    # Function to apply OLM , for OCP / ROKS only
+    # Function to apply OLM , for OCP only
     def apply_olm(self, progress, task):
         # Number of tasks = 3
         try:
@@ -276,17 +276,16 @@ class Deploy:
             progress.update(task, advance=1)
 
             retries = 0
+            catalogsource_name = "ibm-content-assistant-operator-catalog"
             progress.log(f"Waiting for IBM Content Assistant Operator Catalog Pod to start")
             progress.log()
-            while retries < 40:
-                pods = self._core_v1_api.list_namespaced_pod(self._catalog_namespace)
-                running_pods = [pod.metadata.name for pod in pods.items if
-                                "ibm-content-assistant-operator-catalog" in pod.metadata.name and pod.status.phase == "Running" and pod.status.container_statuses[0].ready]
-                if running_pods:
+            while retries < 80:
+                catalog_ready = self._kube.check_catalogsource_rollout_status(catalogsource_name, self._catalog_namespace)
+
+                if catalog_ready:
                     progress.log(
                         Text(f"IBM Content Assistant Operator Catalog Pod is running.", style="bold green"))
                     progress.log()
-                    progress.update(task, advance=1)
                     break
                 else:
                     retries = retries + 1
@@ -294,7 +293,7 @@ class Deploy:
                     progress.log()
                     sleep(5)
 
-            if retries == 40:
+            if retries == 80:
                 self._logger.debug("Timeout Waiting for IBM Content Assistant Operator Catalog pod to start")
                 progress.log(Text("Timeout Waiting for IBM Content Assistant Operator Catalog pod to start",
                                   style="bold red"))
@@ -305,6 +304,8 @@ class Deploy:
                 progress.log(Syntax(
                     f"kubectl describe pod $(kubectl get pod -n {self._catalog_namespace} | grep ibm-content-assistant-operator-catalog | awk '{{print $1}}') -n ${self._catalog_namespace}",
                     "bash"))
+
+            progress.update(task, advance=1)
 
             self._logger.info("Applying/Patching Operator Group")
             progress.log("Applying/Patching Operator Group")
@@ -342,14 +343,15 @@ class Deploy:
             # Number of tasks = 1
             attempts = 0
             retries = 0
+            deployment_name = "ibm-content-assistant-operator"
             self._logger.info("Checking rollout status of IBM Content Assistant Operator deployment")
             progress.log(f"Checking rollout status of IBM Content Assistant Operator deployment")
             progress.log()
             while retries < 40:
-                pods = self._core_v1_api.list_namespaced_pod(self._setup.namespace)
-                running_pods = [pod.metadata.name for pod in pods.items if
-                                "ibm-content-assistant-operator" in pod.metadata.name and "catalog" not in pod.metadata.name and pod.status.phase == "Running" and pod.status.container_statuses[0].ready]
-                if running_pods:
+
+                deployed = self._kube.check_deployment_rollout_status(deployment_name, self._setup.namespace)
+
+                if deployed:
                     progress.log(
                         Text(f"IBM Content Assistant Operator Pod is running.", style="bold green"))
                     progress.log()

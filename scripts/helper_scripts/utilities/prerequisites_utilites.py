@@ -18,19 +18,19 @@ import re
 import secrets
 import shutil
 import socket
+import ssl
 import struct
 import subprocess
 import time
-import ssl
 
 import yaml
-#from OpenSSL import SSL
+# from OpenSSL import SSL
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from rich import print
-from rich.text import Text
 from rich.panel import Panel
+from rich.text import Text
 
 _CIPHERS = bytes(
     "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256",

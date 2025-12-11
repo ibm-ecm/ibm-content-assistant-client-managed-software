@@ -17,6 +17,8 @@
 
 # IBM Content Assistant Client Managed Software license information here: https://ibm.biz/CAS_License_1_0_0
 # IBM Software Notices here: https://ibm.biz/CAS_Notices_1_0_0
+# IBM Cloud Pak for Business Automation license information here: https://ibm.biz/cp4ba-license-2501
+# IBM Cloud Pak for Business Automation Reserved license here: https://ibm.biz/cp4ba-reserved-license-2501
 
 # License Acceptance - Valid values: [true; false]
 LICENSE_ACCEPT = false
@@ -25,10 +27,9 @@ LICENSE_ACCEPT = false
 # ##                   Platform                     ##
 # ####################################################
 
-# Platform of choice - Valid values: [1; 2; 3]
+# Platform of choice - Valid values: [1; 2]
 # 1. OCP
-# 2. ROKS
-# 3. CNCF
+# 2. CNCF
 PLATFORM = 1
 
 
@@ -45,7 +46,7 @@ NAMESPACE = "<Namespace>"
 # ####################################################
 
 # Key used to authenticate with IBM Entitlement Registry
-# Check the link on how to obtain an IBM Entitlement key https://www.ibm.com/docs/SSNW2F_5.7.0/com.ibm.dba.install/op_topics/tsk_images_enterp_entitled.html
+# Check the link on how to obtain an IBM Entitlement key https://www.ibm.com/docs/SSSUG3T_1.0.0/com.ibm.icacm.install/icacm_topics/tsk_images_enterp_entitled.html
 ENTITLEMENT_KEY = "<IBMEntitlementKey>"
 
 # CNCF Deploy Only

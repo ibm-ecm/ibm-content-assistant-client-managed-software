@@ -30,13 +30,12 @@ NAMESPACE = "<Namespace>"
 # ##              License and Platform              ##
 # ####################################################
 
-# Choose the licensing model for the Product you are installing - Valid values: ['FNCM']
+# Choose the licensing model for the Product you are installing - Valid values: ['FNCM', "CP4BA"]
 LICENSE = "FNCM"
 
-# Platform of choice - Valid values: [1; 2; 3]
+# Platform of choice - Valid values: [1; 2]
 # 1. OCP
-# 2. ROKS
-# 3. CNCF
+# 2. CNCF
 PLATFORM = 1
 
 # Do you want to configure ingress - Valid values: [true; false]

@@ -157,7 +157,7 @@ class CleanDeployment:
     # This function takes care of the deletion of operator after the CR and resources are deleted
     def delete_operator(self, task1, progress):
         SLEEP_TIMER = 5
-        if self._deployment_prerequisites.platform.lower() in ["ocp", "roks"]:
+        if self._deployment_prerequisites.platform.lower() in ["ocp"]:
 
             if "subscription" not in self._operator_details:
                 subscription_name = None
@@ -242,7 +242,6 @@ class CleanDeployment:
                 progress.log("Deleting Catalog Source...")
                 self._kube.delete_catalog_source(namespace=self._namespace, name=catalog_source)
                 time.sleep(SLEEP_TIMER)
-                progress.advance(task1)
             else:
                 progress.log()
                 progress.log("Skipping the Deletion of Catalog Source as it is installed in a global scope...")

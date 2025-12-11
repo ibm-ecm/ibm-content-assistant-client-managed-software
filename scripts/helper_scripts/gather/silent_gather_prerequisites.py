@@ -13,7 +13,6 @@
 #  - the class should have a constructor that takes the filename as an argument
 #  - the class should have a method to parse the file
 
-import inspect
 import os
 
 import toml
@@ -42,22 +41,6 @@ class SilentGatherPrereqOptions(GatherPrereqOptions):
             self._logger.exception(
                 f"Exception from silent.py script - error loading {self._envfile_path} file -  {str(e)}")
 
-    # method to parse the file
-    def parse_envfile(self):
-        try:
-            self.silent_platform()
-
-            self.silent_idp()
-
-            self.silent_license_model()
-
-
-            # self.error_check()
-
-        except Exception as e:
-            self._logger.exception(
-                f"Exception from silent.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
-
     def error_check(self):
         if len(self._error_list) > 0:
             for error in self._error_list:
@@ -67,7 +50,7 @@ class SilentGatherPrereqOptions(GatherPrereqOptions):
         return len(self._error_list)
 
     def silent_platform(self):
-        platform = gather_var(key="PLATFORM", valid_values=[1, 2, 3], _logger=self._logger, _envfile=self._envfile,
+        platform = gather_var(key="PLATFORM", valid_values=[1, 2], _logger=self._logger, _envfile=self._envfile,
                               _error_list=self._error_list)
         if platform is not None:
             self.platform = self.Platform(platform).name
@@ -133,7 +116,7 @@ class SilentGatherPrereqOptions(GatherPrereqOptions):
                                _envfile=self._envfile, _error_list=self._error_list)
 
     def silent_license_model(self):
-        license_model = gather_var(key="LICENSE", valid_values=["FNCM"], _logger=self._logger,
+        license_model = gather_var(key="LICENSE", valid_values=["FNCM", "CP4BA"], _logger=self._logger,
                                    _envfile=self._envfile, _error_list=self._error_list)
         if license_model is not None:
             self._license_model = license_model

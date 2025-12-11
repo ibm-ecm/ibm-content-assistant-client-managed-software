@@ -19,14 +19,31 @@ import yaml
 from kubernetes import config, client
 from kubernetes.client import ApiException
 from kubernetes.stream import stream
-from rich.text import Text
 from requests.exceptions import ConnectTimeout, ConnectionError
+from rich.text import Text
 
 
 class KubernetesUtilities:
     def __init__(self, logger=None):
-        config.load_kube_config()
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        self._logger = logger
+        self._current_namespace = None
+
+        try:
+            config.load_incluster_config()
+            self._in_cluster = True
+            self._current_namespace = self.get_current_namespace()
+            self._logger.info("Running inside the cluster.")
+            self._logger.info(f"Current namespace: {self._current_namespace}")
+        except Exception:
+            self._in_cluster = False
+            config.load_kube_config()
+            self._current_context = config.list_kube_config_contexts()[1]
+            self._current_namespace = self.get_current_namespace()
+            self._logger.info("Running outside the cluster.")
+            self._logger.info(f"Current context: {self._current_namespace}")
+
+
         self._core_v1 = client.CoreV1Api()
         self._apps_v1 = client.AppsV1Api()
         self._rbac_v1 = client.RbacAuthorizationV1Api()
@@ -39,8 +56,16 @@ class KubernetesUtilities:
         self._custom_resource = {}
         self._cr_details = {}
         self._operator_details = {}
-        self._logger = logger
+
         self._resource_type_dict = {}
+
+    @property
+    def in_cluster(self):
+        return self._in_cluster
+
+    @property
+    def current_namespace(self):
+        return self._current_namespace
 
     @property
     def resource_type_dict(self):
@@ -81,6 +106,26 @@ class KubernetesUtilities:
     @property
     def version_v1(self):
         return self._version_v1
+
+    # Common function to get current namespace when running in-cluster
+    def get_current_namespace(self):
+        try:
+            # Check if inside or outside the cluster
+            if self._in_cluster:
+                self._logger.info("Getting namespace from in-cluster service account")
+                # Read the namespace from the service account secret
+                with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r") as f:
+                    namespace = f.read().strip()
+                self._logger.info(f"In-cluster namespace: {namespace}")
+            else:
+                self._logger.info("Not running inside the cluster.")
+                namespace = self._current_context['context']['namespace']
+                self._logger.info(f"Current context namespace: {namespace}")
+
+            return namespace
+        except Exception as e:
+            self._logger.info(f"Error getting namespace: {e}")
+            return None
 
     # Function to collect all user-created configmaps
     def calculate_user_configmaps(self, components=list):
@@ -158,6 +203,50 @@ class KubernetesUtilities:
         except Exception as e:
             self._logger.info(f"Error calculating deployed components: {e}")
             return {}
+
+    # Function to check the status of catalog source upgrade rollout
+    def check_catalogsource_rollout_status(self, name="ibm-content-assistant-operator-catalog", namespace=""):
+        try:
+            catalog_source = self._custom_api.get_namespaced_custom_object(
+                group="operators.coreos.com",
+                version="v1alpha1",
+                namespace=namespace,
+                plural="catalogsources",
+                name=name
+            )
+            status = catalog_source.get("status", {})
+            connection = status.get("connectionState", {})
+
+            self._logger.info(f"Catalog source '{name}' status: {connection}")
+
+            if connection.get("lastObservedState").lower() in ["ready", "healthy", "idle"]:
+                return True
+
+            return False
+        except Exception as e:
+            self._logger.info(f"Error checking catalog source rollout status: {e}")
+            return False
+
+    # Function to check the status of a deployment upgrade rollout
+    def check_deployment_rollout_status(self, deployment_name, namespace):
+        try:
+            deployment = self._apps_v1.read_namespaced_deployment(name=deployment_name, namespace=namespace)
+            status = deployment.status
+            spec = deployment.spec
+
+            self._logger.info(f"Deployment '{deployment_name}' status: {status}\n"
+                              f"Replicas Spec: {spec.replicas}")
+
+            if (status.updated_replicas == spec.replicas and
+                status.replicas == spec.replicas and
+                status.available_replicas == spec.replicas and
+                status.observed_generation >= deployment.metadata.generation):
+                    return True
+
+            return False
+        except Exception as e:
+            self._logger.info(f"Error checking deployment rollout status: {e}")
+            return False
 
     # Function to extract storage classes from the CR
     def extract_storage_classes(self):
@@ -394,7 +483,7 @@ class KubernetesUtilities:
             self._logger.info(f"Error in utilities.py from the get_subscription: {e}")
             return None
 
-    # Function to delete the subscription of Content Assistant operator in OCP/ROKS
+    # Function to delete the subscription of Content Assistant operator in OCP
     def delete_subscription(self, namespace, name):
         # Define the resource group, version, and plural name for the custom resource
         group = "operators.coreos.com"
@@ -413,7 +502,7 @@ class KubernetesUtilities:
             self._logger.info(f"Error in utilities.py from the delete_subscription: {e}")
             return False
 
-    # This function deletes the csv from the namespace in OCP/ROKS
+    # This function deletes the csv from the namespace in OCP
     def delete_clusterserviceversion(self, csv_name="", namespace=""):
 
         # Define the resource group, version, and plural name for the custom resource

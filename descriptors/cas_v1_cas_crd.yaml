@@ -349,9 +349,14 @@ spec:
                   sc_cas_license_type:
                     description: |-
                       This parameter to specify the license type for IBM Content Assistant - Client Managed Software
-                      The possible values are fncm. This parameter is required.
+                      The possible values are fncm or cp4ba.
+                      The product license for Cloud Pak for Business Automation License can be found at https://ibm.biz/cp4ba_license_2501 (OR)
+                      The product license for Cloud Pak for Business Automation Reserved License can be found at https://ibm.biz/cp4ba-reserved-license-2501
+                      The product license for FNCM Standlone license can be found at https://ibm.biz/CPE_FNCM_License_5_7_0
+                      This parameter is required.
                     enum:
                     - fncm
+                    - cp4ba
                     type: string
                   sc_deployment_hostname_suffix:
                     type: string

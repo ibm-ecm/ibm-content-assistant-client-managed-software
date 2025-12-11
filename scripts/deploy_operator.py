@@ -29,7 +29,7 @@ from helper_scripts.utilities.interface import clear, display_issues, display_pr
 from helper_scripts.utilities.utilities import prereq_checks, read_version_toml, create_deployment_info, \
     create_version_info
 
-__version__ = "1.0.0"
+__version__ = "1.1.3"
 
 app = typer.Typer()
 state = {
@@ -136,7 +136,7 @@ def deploy():
     for file in files:
         required_files.append(os.path.join(descriptor_path, file))
 
-    checks = ["connection","podman", "docker"]
+    checks = ["connection","podman"]
     missing_tools, results, files = prereq_checks(logger=state["logger"], prereqs=checks, files=required_files)
 
     # Print table of prerequisites that are missing
@@ -153,8 +153,7 @@ def deploy():
     if not state["silent"]:
         state["setup"] = g.GatherOptions(state["logger"], console, script_type="deploy", dev=state["dev"])
         state["setup"].podman_available = results["podman"]
-        state["setup"].docker_available = results["docker"]
-        state["setup"].collect_license_model()
+        state["setup"].collect_license_model(version_data)
         state["setup"].collect_platform()
         state["setup"].collect_verify_entitlement_key()
         state["setup"].collect_namespace()
@@ -164,8 +163,7 @@ def deploy():
         state["setup"] = sg.SilentGatherOptions(state["logger"],
                                                 silent_path, script_type="deploy", dev=state["dev"])
         state["setup"].podman_available = results["podman"]
-        state["setup"].docker_available = results["docker"]
-        state["setup"].silent_parse_deploy_operator_file(state["validate"])
+        state["setup"].silent_parse_deploy_operator_file(state["validate"], version_data)
 
     deployment_details = create_deployment_info(state["setup"], version_data)
     state["logger"].info(f"Created deployment details: {deployment_details}")

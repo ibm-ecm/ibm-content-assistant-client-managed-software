@@ -14,7 +14,7 @@
 # ####################################################
 
 # Key used to authenticate with IBM Entitlement Registry
-# Check the link on how to obtain an IBM Entitlement key https://www.ibm.com/docs/SSNW2F_5.7.0/com.ibm.dba.install/op_topics/tsk_images_enterp_entitled.html
+# Check the link on how to obtain an IBM Entitlement key https://www.ibm.com/docs/SSSUG3T_1.0.0/com.ibm.icacm.install/icacm_topics/tsk_images_enterp_entitled.html
 ENTITLEMENT_KEY = "<IBMEntitlementKey>"
 
 # CNCF Only: Pull images from a pirvate registry

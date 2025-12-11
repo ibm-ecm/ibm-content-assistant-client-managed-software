@@ -38,7 +38,7 @@ from helper_scripts.utilities.interface import display_prereq_passed, display_is
     display_deployment_resources
 from helper_scripts.utilities.utilities import prereq_checks, create_version_info, read_version_toml
 
-__version__ = "1.0.0"
+__version__ = "1.1.3"
 
 app = typer.Typer()
 
@@ -257,7 +257,7 @@ def main(ctx: typer.Context,
     elif ctx.invoked_subcommand == "deployment":
         display_mode_version("Deployment Cleanup", "Clean up of the IBM Content Assistant Deployment Only")
 
-    checks = ["connection","podman", "docker"]
+    checks = ["connection","podman"]
     missing_tools, results, files = prereq_checks(logger=state["logger"], prereqs=checks)
 
     # Print table of prerequisites that are missing
@@ -283,14 +283,12 @@ def main(ctx: typer.Context,
         silent_path = os.path.join("silent_config", "silent_install_cleandeployment.toml")
         state["setup"] = sg.SilentGatherOptions(state["logger"], silent_path, script_type="cleanup")
         state["setup"].podman_available = results["podman"]
-        state["setup"].docker_available = results["docker"]
         state["setup"].silent_platform()
         state["setup"].silent_namespace()
 
     else:
         state["setup"] = g.GatherOptions(state["logger"], console, script_type="cleanup")
         state["setup"].podman_available = results["podman"]
-        state["setup"].docker_available = results["docker"]
         state["setup"].collect_platform()
         state["setup"].collect_namespace()
 
