@@ -1,10 +1,11 @@
-# IBM Content Assistant (Client Managed Software) v1.0.0
+# IBM Content Assistant (Client Managed Software) v1.0.x
 
 This repository includes scripts and resources to help you install the IBM Content Assistant capabilities.
 Installation of the capabilities is done with a Go based operator.
 
 |   Release    |  Tag   | CASE Version |      Date      |
 |:------------:|:------:|:------------:|:--------------:|
+|  CAS 1.0.1   | v1.0.1 |    1.0.1     | 12 / 11 / 2025 |
 | CAS 1.0.0 GA | v1.0.0 |    1.0.0     | 09 / 26 / 2025 |
 
 

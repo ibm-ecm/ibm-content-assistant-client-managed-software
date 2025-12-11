@@ -81,7 +81,7 @@ class SilentGatherOptions(GatherOptions):
     def silent_platform(self):
         self._logger.info("Gather platform details")
         try:
-            platform = gather_var(key="PLATFORM", valid_values=[1, 2, 3], _logger=self._logger, _envfile=self._envfile,
+            platform = gather_var(key="PLATFORM", valid_values=[1, 2], _logger=self._logger, _envfile=self._envfile,
                                   _error_list=self._error_list)
             if platform is not None:
                 if platform:
@@ -99,10 +99,16 @@ class SilentGatherOptions(GatherOptions):
         super().collect_namespace(namespace)
         self._namespace = super().namespace
 
-    def silent_license_model(self):
-        license = self._envfile.get("LICENSE_ACCEPT")
-        super().collect_license_model(license)
-        self._accept_license = super().accept_license
+    # def silent_license_model(self):
+    #     license_model = gather_var(key="LICENSE", valid_values=["FNCM", "CP4BA"], _logger=self._logger,
+    #                                _envfile=self._envfile, _error_list=self._error_list)
+    #     if license_model is not None:
+    #         self._license_model = license_model
+
+    def silent_license_model(self, version_data=None):
+        license = gather_var(key="LICENSE_ACCEPT", valid_values=[True], _logger=self._logger, _envfile=self._envfile,
+                   _error_list=self._error_list)
+        self._accept_license = license
 
     def silent_collect_sensitive_info(self):
         collected_sensitive = gather_var(key="COLLECT_SENSITIVE_DATA", _logger=self._logger, _envfile=self._envfile, _error_list=self._error_list)
@@ -206,7 +212,7 @@ class SilentGatherOptions(GatherOptions):
             self._cas_version = self.Version.CASVersion(version).name
 
 
-    def silent_parse_deploy_operator_file(self, validate=True):
+    def silent_parse_deploy_operator_file(self, validate=True, version_data=None):
         self.silent_license_model()
         self.silent_platform()
         self._entitlement_key = self._envfile.get("ENTITLEMENT_KEY")
@@ -260,13 +266,11 @@ class SilentGatherOptions(GatherOptions):
         self._logger.info("namespace-", self._namespace)
         self._logger.info("platform-", self._platform)
         self._logger.info("podman present-", super()._podman_available)
-        self._logger.info("docker present -", super()._docker_available)
         self._logger.info("oc logged in", super()._ocp_logged_in)
         return_dict = {
             "namespace": self._namespace,
             "platform": self._platform,
             "podman present": super()._podman_available,
-            "docker present": super()._docker_available,
             "Cluster connection": super()._ocp_logged_in
         }
 

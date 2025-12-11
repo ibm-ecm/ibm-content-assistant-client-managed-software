@@ -32,6 +32,7 @@ spec:
     ## Choose the licensing model for the IBM Content Assistant components.
     ## Valid values are:
     ## "fncm" for IBM FileNet Content Manager,
+    ## "cp4ba" for IBM Cloud Pak for Business Automation.
     sc_cas_license_type: "fncm"
 
     ## All IBM Content Assistant components must use/share the image_pull_secrets to pull images.
@@ -48,7 +49,7 @@ spec:
     ## Optional: You can specify a profile size for IBM Content Assistant - valid values are small,medium,large - default is small.
     sc_deployment_profile_size: small
 
-    ## The platform to be deployed specified by the user.  Possible values are: OCP, ROKS, and other.
+    ## The platform to be deployed specified by the user.  Possible values are: OCP and other.
     sc_deployment_platform: "<Required>"
 
     ## The optional parameter to enable/disable the creation of sample network policy templates for Content Assistant components.  If the parameter is not defined, then the default value is "false".

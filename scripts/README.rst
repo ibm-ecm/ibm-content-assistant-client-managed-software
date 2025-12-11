@@ -22,6 +22,8 @@ The IBM Content Assistant Suite includes the following tools:
     The LoadImages script helps you load the IBM Content Assistant images into your private image registry. This script automates the loading of images for Offline CNCF and Airgap for OCP.
 - MustGather
     The MustGather script helps you gather information about your IBM Content Assistant deployment. This script automates the collection of logs, configuration files, and other diagnostic information to help troubleshoot issues with your IBM Content Assistant Install.
+- Upgrade Deployment
+    The Upgrade Deployment Script helps you upgrade an existing IBM Content Assistant deployment to a newer version. This script automates the upgrade process and simplifies the management of IBM Content Assistant deployments.
 
 
 Prerequisites
@@ -64,11 +66,11 @@ All python scripts provided in the IBM Content Assistant DevOps Suite has the fo
 
 To use verbose and / or dryrun mode, you can include the `--verbose` and / or `--dryrun` flag in the command. For example::
 
-    python3 upgradedeployment.py --verbose --dryrun deployment
+    python3 upgrade_deployment.py --verbose --dryrun
 
 To use silent mode, fill out the corresponding configuration file and include the `--silent` flag in the command. For example::
 
-    python3 upgradedeployment.py --silent deployment
+    python3 upgrade_deployment.py --silent
 
 .. note::
     All silent configuration files are located in the `scripts/silent_config` directory.
@@ -254,6 +256,18 @@ MustGather: `must_gather.py`
 
 For more information on running the MustGather Script, refer to the `documentation <https://www.ibm.com/support/pages/node/7152864>`_.
 
+
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Upgrade Deployment: `upgrade_deployment.py`
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    - Open a terminal or command prompt.
+    - Navigate to the installation directory of the script.
+    - Run the script using the following command::
+
+         python3 upgrade_deployment.py
+
+    - Follow the prompts and provide the required information.
 
 Troubleshooting
 ---------------

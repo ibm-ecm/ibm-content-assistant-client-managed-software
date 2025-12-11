@@ -56,7 +56,7 @@ from helper_scripts.utilities.prerequisites_utilites import zip_folder, \
 from helper_scripts.utilities.utilities import read_version_toml, prereq_checks
 from helper_scripts.validate import validate as v
 
-__version__ = "1.0.0"
+__version__ = "1.1.3"
 
 
 
@@ -450,6 +450,7 @@ def validate(
         skip_idp: bool = typer.Option(False, "--skip-idp", "-idp", help="Skip IDP validation", hidden=True),
         pvc_size: str = typer.Option('10Mi', "--pvc-size", "-pvc", help="Set size for sample persistent volume validation"),
         skip_vectordb: bool = typer.Option(False, "--skip-vectordb", "-vectordb", help="Skip Vector Database validation"),
+        skip_api: bool = typer.Option(False, "--skip-api", "-api", help="Skip AI Provider API validation"),
 ):
     """
     Validate the prerequisites for IBM Content Assistant Deployment.
@@ -459,6 +460,7 @@ def validate(
     validate_storage_class = not skip_storage_class
     validate_idp = not skip_idp
     validate_vectordb = not skip_vectordb
+    validate_api = not skip_api
 
     hint_panel = Panel.fit(
         "- Run the validation from the IBM Content Assistant Operator \n"
@@ -627,6 +629,10 @@ def validate(
             if validate_vectordb:
                 if vector_database_prop:
                     task2 = progress.add_task("[yellow]Validate Database", total=vector_database_prop_dict["vector_database_number"])
+            # Adding provider API validation task only if api flag is True
+            if validate_api:
+                if content_assistant_prop:
+                    task3 = progress.add_task("[cyan]Validate AI Provider APIs", total=content_assistant_prop_dict["ai_providers_number"])
 
 
             while not progress.finished:
@@ -638,6 +644,11 @@ def validate(
                 # Validating storage classes only if storageclass flag is True
                 if validate_vectordb:
                     vobject.validate_vector_databases(task2, progress)
+
+                # Validating AI Provider APIs only if api flag is True
+                if validate_api:
+                    vobject.validate_ai_provider_apis(task3, progress)
+
         # Apply secrets and CR if requested
         if all(vobject.is_validated.values()):
             print()

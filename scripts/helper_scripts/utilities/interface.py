@@ -568,9 +568,6 @@ def display_prereq_passed(prereqs=None):
     if 'podman' in prereqs:
         if prereqs['podman']:
             check_list.append("Podman Daemon")
-    if 'docker' in prereqs:
-        if prereqs['docker']:
-            check_list.append("Docker Daemon")
     if 'java' in prereqs:
         if prereqs['java']:
             check_list.append("Java")
@@ -1699,11 +1696,15 @@ def display_deployment_resources(logger, deployment_resources=None, deployment_d
                              "  - Operator Deployment\n"
                              "  - Role, RoleBinding & Service Account\n")
 
+        left_behind_msg += "  - Custom Resource Definition (CRD)\n"
+
         if operator_details["type"] == "OLM":
-            instructions_msg += ("  - Subscription and Operator Group\n"
-                                 "  - Operator Catalog Source\n")
-        else:
-            left_behind_msg += "  - Custom Resource Definition (CRD)\n"
+            instructions_msg += "  - Subscription and Operator Group\n"
+
+            if operator_details["catalogType"] == "Global":
+                left_behind_msg += "  - Operator CatalogSource (Global)\n"
+            else:
+                instructions_msg += "  - Operator CatalogSource (Private)\n"
 
 
         operator_table = Table(title="Operator Details")

@@ -55,18 +55,27 @@ class GenerateCR:
         self._deployment_properties = deployment_properties
         self._ingress_properties = ingress_properties
 
+        # AppVersion to CAS_Version mapping
+        version_to_appversion = {
+            "1.0.0": "1.0.0",
+            "1.0.1": "1.0.0"
+        }
+
+        appVersion = version_to_appversion.get(self._deployment_properties["CAS_VERSION"], "1.0.0")
+
+
         self._generate_folder = os.path.join(os.getcwd(), "generatedFiles", namespace)
         # Navigate up two levels to the parent directory
         self._base_template = os.path.join(os.getcwd(), "helper_scripts", "generate", "cr_templates",
-                                           self._deployment_properties["CAS_VERSION"], "base.yaml")
+                                           appVersion, "base.yaml")
         self._cas_configuration_template = os.path.join(os.getcwd(), "helper_scripts", "generate", "cr_templates",
-                                           self._deployment_properties["CAS_VERSION"], "cas_configuration.yaml")
+                                           appVersion, "cas_configuration.yaml")
         self._vector_database_template = os.path.join(os.getcwd(), "helper_scripts", "generate", "cr_templates",
-                                           self._deployment_properties["CAS_VERSION"], "vector_database.yaml")
+                                           appVersion, "vector_database.yaml")
         self._ingress_template = os.path.join(os.getcwd(), "helper_scripts", "generate", "cr_templates",
-                                          self._deployment_properties["CAS_VERSION"], "ingress.yaml")
+                                          appVersion, "ingress.yaml")
         self._egress_template = os.path.join(os.getcwd(), "helper_scripts", "generate", "cr_templates",
-                                          self._deployment_properties["CAS_VERSION"], "egress.yaml")
+                                          appVersion, "egress.yaml")
 
         self._generated_cr = os.path.join(self._generate_folder, "ibm_content_assistant_cr.yaml")
         self._merged_data = CommentedMap()
@@ -204,12 +213,7 @@ class GenerateCR:
                         base_dict["spec"]["shared_configuration"]["trusted_certificate_list"].append(
                             secret_name)
 
-            # when roks is enabled we need to have an ingress parameter set to false
-            if self._deployment_properties["PLATFORM"].lower() == "roks":
-                base_dict["spec"]["shared_configuration"]["sc_ingress_enable"] = False
-            base_dict["spec"]["shared_configuration"]["sc_cas_license_type"] = self._deployment_properties["LICENSE"]
-            # For now it can only be fncm
-            base_dict["spec"]["shared_configuration"]["sc_cas_license_type"] = "fncm"
+            base_dict["spec"]["shared_configuration"]["sc_cas_license_type"] = self._deployment_properties["LICENSE"].lower()
             base_dict["spec"]["shared_configuration"]["storage_configuration"][
                 "sc_slow_file_storage_classname"] = self._deployment_properties["SLOW_FILE_STORAGE_CLASSNAME"]
 

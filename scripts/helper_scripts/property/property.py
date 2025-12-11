@@ -96,7 +96,7 @@ class Property:
             # Create a copy of the deployment property file properties
             deployment_dict = copy.deepcopy(self._deployment_properties)
             deployment_dict['CAS_VERSION']['value'] = self._gather.cas_version
-            deployment_dict['LICENSE']['value'] = self._gather.license_model
+            deployment_dict['LICENSE']['value'] = self._gather.license_model.upper()
             deployment_dict['PLATFORM']['value'] = self._gather.platform
 
 
@@ -112,7 +112,7 @@ class Property:
             egress_dict = copy.deepcopy(self._egress_properties)
             egress_dict['GENERATE_NETWORK_POLICIES']['value'] = self._gather.np_support
 
-            if (self._gather.np_support and self._gather.platform in ["OCP", 'ROKS']) or not self._gather.np_support:
+            if (self._gather.np_support and self._gather.platform in ["OCP"]) or not self._gather.np_support:
                 egress_dict.pop('K8_API_NAMESPACE')
                 egress_dict.pop('K8_API_PORT')
                 egress_dict.pop('K8_DNS_NAMESPACE')

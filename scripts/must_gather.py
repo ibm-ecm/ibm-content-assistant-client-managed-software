@@ -40,7 +40,7 @@ from helper_scripts.utilities.interface import (
     display_prereq_passed, mustgather_details, mustgather_network_results)
 from helper_scripts.utilities.utilities import prereq_checks
 
-__version__ = "1.0.0"
+__version__ = "1.1.3"
 
 app = typer.Typer()
 
@@ -60,17 +60,17 @@ console = Console(record=True)
 def setup_logger(file_log_level):
     # Create a logger object
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(file_log_level)
 
     # Setup console logger
     shell_handler = RichHandler()
-    shell_handler.setLevel(file_log_level)
+    shell_handler.setLevel(logging.WARNING)
     formatter_rich = logging.Formatter("%(message)s")
     shell_handler.setFormatter(formatter_rich)
 
     # Setup file logger
     file_handler = logging.FileHandler("mustgather.log")
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(file_log_level)
     formatter_file = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(message)-100s - %(filename)s:%(lineno)d", "%Y-%m-%d %H:%M:%S")
     file_handler.setFormatter(formatter_file)

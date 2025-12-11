@@ -12,10 +12,9 @@
 import os
 from pathlib import Path
 
+from rich import print
 from rich.panel import Panel
 from rich.text import Text
-from rich import print
-
 
 from ..utilities.prerequisites_utilites import write_yaml_to_file, write_log_to_file
 

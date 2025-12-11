@@ -14,7 +14,6 @@ import re
 import shutil
 import subprocess
 
-import docker
 import requests
 import toml
 from requests import ConnectTimeout
@@ -28,57 +27,6 @@ from .prerequisites_utilites import command_available, check_java_version, \
     get_skopeo_version, filepath_validate, get_ibm_pak_version, get_oc_version, get_mirror_version
 from ..property.read_prop import ReadPropImageTag
 from ..utilities import kubernetes_utilites as k
-
-
-# Function to check if docker is available
-def docker_available():
-    try:
-        client = docker.from_env()
-        client.ping()
-        return True
-    except docker.errors.APIError:
-        return False
-    except Exception as e:
-        return False
-
-
-# Function to log in to a registry using docker
-def login_to_registry_docker(registry, username, password, logger, ssl_enabled=False, ssl_cert_path=''):
-    try:
-
-        if ssl_enabled:
-            registry_url = f"https://{registry}"
-
-            # Perform Docker login with TLS certificate
-            response = requests.get(f"{registry_url}/v2/", auth=(username, password), verify=ssl_cert_path)
-
-            # Check if login was successful
-            if response.status_code == 200:
-                logger.info("Successfully logged in to the Docker registry.")
-                return True
-            else:
-                logger.error(f"Failed to log in to the Docker registry. Status code: {response.status_code}")
-                return False
-        else:
-
-            client = docker.from_env()
-            client.ping()
-
-            # Log in to the Docker registry
-
-            login_result = client.login(username=username, password=password, registry=registry)
-            # Check if the login was successful
-            if login_result:
-                logger.info(f"Successfully logged in to {registry}")
-                return True
-            else:
-                logger.error(f"Failed to log in to {registry}")
-                return False
-
-    except docker.errors.APIError as e:
-        logger.info(f"Error: {e}")
-        return False
-
 
 # Function to log in to a registry using podman
 def login_to_registry_podman(registry, username, password, logger, ssl_enabled=False, ssl_cert_path=''):
@@ -141,7 +89,6 @@ def prereq_checks(logger, prereqs=None, files=None, fncm_version='5.6.0'):
         missing_files = []
 
         prereq_summary = {
-            "docker": False,
             "podman": False,
             "java": False,
             "java_version": "",
@@ -173,30 +120,19 @@ def prereq_checks(logger, prereqs=None, files=None, fncm_version='5.6.0'):
                 logger.info(f"Prerequisites failed -> Descriptor files not present - {missing_files}")
                 prereq_summary["descriptor_files"] = False
 
-        if any(x in prereqs for x in ["podman", "docker"]):
+        if any(x in prereqs for x in ["podman"]):
             logger.info(f"Checking if the 'podman' is available.")
             podman = command_available("podman")
-            logger.info(f"Checking if the 'docker' is available.")
-            docker = docker_available()
 
-            # Either podman or docker needed
-            if docker:
+            if podman:
 
-                logger.info("Docker Daemon available")
-                logger.info("Using Docker Daemon")
-                prereq_summary["docker"] = True
+                logger.info("Podman available")
+                logger.info("Using Podman Daemon")
+                prereq_summary["podman"] = True
 
             else:
-                logger.info("Docker Daemon is not available")
-                if podman:
-
-                    logger.info("Podman available")
-                    logger.info("Using Podman Daemon")
-                    prereq_summary["podman"] = True
-
-                else:
-                    logger.info("Neither Podman or Docker Daemon present")
-                    missing_tools.append("Podman/Docker CLI")
+                logger.info("Podman not present")
+                missing_tools.append("Podman CLI")
 
         if "oc" in prereqs:
             logger.info(f"Checking if the 'oc' command is available.")
