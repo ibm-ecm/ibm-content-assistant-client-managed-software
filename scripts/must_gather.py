@@ -221,7 +221,7 @@ def main(
         state["verbose"] = True
         FILE_LOG_LEVEL = logging.DEBUG
     else:
-        FILE_LOG_LEVEL = logging.WARNING
+        FILE_LOG_LEVEL = logging.INFO
 
     state["logger"] = setup_logger(FILE_LOG_LEVEL)
 

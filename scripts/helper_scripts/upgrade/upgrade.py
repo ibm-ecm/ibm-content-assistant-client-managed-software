@@ -24,7 +24,7 @@ from rich.text import Text
 from ..utilities import kubernetes_utilites as k
 from ..utilities.prerequisites_utilites import zip_folder, write_yaml_to_file
 from ..utilities.utilities import replace_namespace_in_file, create_tmp_folder, is_key_present, update_value_by_path, \
-    find_keys_and_structures
+    find_keys_and_structures, delete_key_by_path
 
 
 # Class to handle upgrade operator and deployment related functionalities
@@ -189,10 +189,12 @@ class Upgrade:
             # Number of Tasks = 4
             progress.log(Panel.fit("Starting CRD and Permission Upgrade", style="cyan"))
             progress.log()
+            self._logger.info(f"Starting CRD and Permission Upgrade")
 
             # Apply the CRD
             progress.log(f"Applying/Patching Custom Resource Definition")
             progress.log()
+            self._logger.info(f"Applying/Patching Custom Resource Definition")
             self._kube.apply_cluster_resource_files(
                 resource_file=self.required_file_paths["cas_v1_cas_crd.yaml"],
                 resource_type="Custom Resource Definition")
@@ -201,6 +203,7 @@ class Upgrade:
             # Apply the Cluster Role
             progress.log(f"Applying/Patching Cluster Role")
             progress.log()
+            self._logger.info(f"Applying/Patching Custom Role")
             self._kube.apply_cluster_resource_files(
                 resource_file=self.required_file_paths["service_account.yaml"],
                 resource_type="Service Account", namespace=self._setup.namespace)
@@ -209,6 +212,7 @@ class Upgrade:
             # Apply the Role
             progress.log(f"Applying/Patching Role")
             progress.log()
+            self._logger.info(f"Applying/Patching Role")
             self._kube.apply_cluster_resource_files(
                 resource_file=self.required_file_paths["role.yaml"], resource_type="Role",
                 namespace=self._setup.namespace)
@@ -217,28 +221,34 @@ class Upgrade:
             # Apply the Role Binding
             progress.log(f"Applying/Patching Role Binding")
             progress.log()
+            self._logger.info(f"Applying/Patching Role Binding")
             self._kube.apply_role_binding(
                 namespace=self._setup.namespace, resource_file=self.required_file_paths["role_binding.yaml"])
             progress.update(task, advance=1)
 
             progress.log(Panel.fit("CRD and Permission Upgrade Completed", style="bold green"))
             progress.log()
+            self._logger.info(f"CRD and Permission Upgrade Completed")
         except Exception as e:
             progress.log(Text(f"Error occurred while applying the resources: {e}", style="bold red"))
+            self._logger.info(f"Error occurred while applying the resources: {e}")
 
     def apply_olm(self, progress, task):
         # Number of tasks = 3
         try:
             progress.log(Panel.fit("Starting OLM Upgrade", style="cyan"))
             progress.log()
+            self._logger.info(f"Starting OLM Upgrade")
             if self._catalog_type == "Private":
                 self._catalog_namespace = self._namespace
                 progress.log(f"Using private catalog namespace: {self._catalog_namespace}")
                 progress.log()
+                self._logger.info(f"Using private catalog namespace: {self._catalog_namespace}")
 
             else:
                 progress.log(f"Using global catalog namespace (GCN): {self._catalog_namespace}")
                 progress.log()
+                self._logger.info(f"Using global catalog namespace (GCN): {self._catalog_namespace}")
             replace_namespace_in_file(project_name=self._catalog_namespace,
                                       input_file=self.required_file_paths["catalogsource.yaml"],
                                       output_file=self.tmp_file_paths["catalogsource.yaml"],
@@ -246,6 +256,7 @@ class Upgrade:
 
             progress.log(f"Applying/Patching Catalog Source")
             progress.log()
+            self._logger.info(f"Applying/Patching Catalog Source")
 
             self._kube.apply_cluster_resource_files(
                 resource_file=self.tmp_file_paths["catalogsource.yaml"],
@@ -256,6 +267,7 @@ class Upgrade:
             catalogsource_name = "ibm-content-assistant-operator-catalog"
             progress.log(f"Waiting for IBM Content Assistant Content Manager Operator Catalog Pod to start")
             progress.log()
+            self._logger.info(f"Waiting for IBM Content Assistant Content Manager Operator Catalog Pod to start")
             while retries < 80:
                 catalog_ready = self._kube.check_catalogsource_rollout_status(catalogsource_name, self._catalog_namespace)
 
@@ -284,13 +296,16 @@ class Upgrade:
             progress.update(task, advance=1)
 
             # Collect Operator Group
+            self._logger.info(f"Creating operator group.")
             operator_group = self._kube.get_operator_group(self._namespace)
             if operator_group:
                 progress.log(f"Operator Group already exists")
                 progress.log()
+                self._logger.info(f"Operator Group already exists")
             else:
                 progress.log("Applying/Patching Operator Group")
                 progress.log()
+                self._logger.info(f"Applying/Patching Operator Group")
                 replace_namespace_in_file(project_name=self._namespace,
                                           input_file=self.required_file_paths["operator_group.yaml"],
                                           output_file=self.tmp_file_paths["operator_group.yaml"],
@@ -304,8 +319,10 @@ class Upgrade:
 
             progress.log(Panel.fit("OLM Installation Completed", style="bold green"))
             progress.log()
+            self._logger.info(f"OLM Installation Completed")
         except Exception as e:
             progress.log(Text(f"Error occurred while applying the resources: {e}", style="bold red"))
+            self._logger.info(f"Error occurred while applying the resources: {e}")
 
     def wait_for_operator(self, progress, task):
         try:
@@ -314,28 +331,31 @@ class Upgrade:
             attempts = 0
             retries = 0
             deployment_name = self._operator_details["deployment"]
-            progress.log(f"Checking rollout status of IBM Content Assistant Content Management Operator deployment")
+            progress.log(f"Checking rollout status of IBM Content Assistant Operator deployment")
             progress.log()
+            self._logger.info(f"Checking rollout status of IBM Content Assistant Operator deployment")
             while retries < 40:
 
                 updated = self._kube.check_deployment_rollout_status(deployment_name, self._namespace)
 
                 if updated:
                     progress.log(
-                        Text(f"IBM Content Assistant Content Manager Operator Pod is running.", style="bold green"))
+                        Text(f"IBM Content Assistant Operator Pod is running.", style="bold green"))
                     progress.log()
+                    self._logger.info(f"IBM Content Assistant Operator Pod is running.")
                     progress.update(task, advance=1)
                     break
                 else:
                     retries = retries + 1
-                    progress.log(f"IBM Content Assistant Content Management Operator upgrade in progress ({retries + 1}/40) ")
+                    progress.log(f"IBM IBM Content Assistant Operator upgrade in progress ({retries + 1}/40) ")
                     progress.log()
                     sleep(15)
 
             if retries == 40:
-                progress.log(Text("Timeout Waiting for IBM Content Assistant Content Manager Operator pod to start",
+                progress.log(Text("Timeout Waiting for IBM Content Assistant Operator pod to start",
                                   style="bold red"))
                 progress.log()
+                self._logger.info(f"Timeout Waiting for IBM Content Assistant Operator pod to start")
 
                 progress.log("Please check the status of Pod by issuing the below command:")
                 progress.log()
@@ -344,20 +364,23 @@ class Upgrade:
                     "bash"))
                 exit()
 
-            progress.log(Panel.fit("IBM Content Assistant Content Manager Operator Upgrade Completed", style="bold green"))
+            progress.log(Panel.fit("IBM Content Assistant Operator Upgrade Completed", style="bold green"))
             progress.update(task, advance=1)
         except Exception as e:
             progress.log(Text(f"Error occurred while applying the resources: {e}", style="bold red"))
             progress.log()
+            self._logger.info(f"Error occurred while waiting for the operator: {e}")
 
     def upgrade_operator_olm(self, progress, task):
         # Number of tasks = 2
 
-        progress.log(Panel.fit("Starting IBM Content Assistant Content Manager Operator Upgrade", style="cyan"))
+        progress.log(Panel.fit("Starting IBM Content Assistant Operator Upgrade", style="cyan"))
         progress.log()
+        self._logger.info(f"Starting IBM Content Assistant Operator Upgrade")
 
         progress.log(f"Scaling down older operator pod before upgrading")
         progress.log()
+        self._logger.info(f"Scaling down older operator pod prior to the upgrade")
 
         # Scale down older operator pod before upgrading
         operator_deployment = self._operator_details["deployment"]
@@ -366,6 +389,7 @@ class Upgrade:
 
         progress.log(f"Applying/Patching Subscription")
         progress.log()
+        self._logger.info(f"Applying/Patching the subscription")
 
         if self._catalog_type == "Private":
             replace_namespace_in_file(project_name=self._namespace,
@@ -375,6 +399,7 @@ class Upgrade:
                                       private=True)
             progress.log(f"Using private catalog namespace: {self._namespace}")
             progress.log()
+            self._logger.info(f"Using private catalog namespace: {self._namespace}")
             progress.update(task, advance=1)
         else:
             replace_namespace_in_file(project_name=self._namespace,
@@ -382,8 +407,10 @@ class Upgrade:
                                       output_file=self.tmp_file_paths["subscription.yaml"],
                                       resource_type="subscription")
             progress.log(f"Using global catalog namespace (GCN): {self._catalog_namespace}")
+            self._logger.info(f"Using global catalog namespace (GCN): {self._catalog_namespace}")
             progress.update(task, advance=1)
 
+        self._logger.info(f"Applying the custom resource files")
         self._kube.apply_cluster_resource_files(
             resource_file=self.tmp_file_paths["subscription.yaml"],
             namespace=self._namespace,
@@ -396,8 +423,9 @@ class Upgrade:
     # Function to install operator on CNCF
     def upgrade_operator_cncf(self, progress, task):
         # Number of tasks = 2
-        progress.log(Panel.fit("Starting IBM Content Assistant Content Manager Operator Upgrade", style="cyan"))
+        progress.log(Panel.fit("Starting IBM Content Assistant Operator Upgrade", style="cyan"))
         progress.log()
+        self._logger.info(f"Starting IBM Content Assistant Operator Upgrade")
 
         shutil.copy(self.required_file_paths["operator.yaml"], self.tmp_file_paths["operator.yaml"])
 
@@ -406,10 +434,11 @@ class Upgrade:
         registry_in_file = "icr.io"
 
         if self._setup.private_registry_valid:
-            progress.log("IBM Content Assistant Content Management Operator is being upgraded using a private registry")
+            progress.log("IBM IBM Content Assistant Operator is being upgraded using a private registry")
             progress.log()
+            self._logger.info(f"FileNet Content Management Operator is being upgraded using a private registry")
             pattern = re.compile(re.escape(registry_in_file) + r'\b')
-            replacement = self._setup.private_registry_server
+            replacement = self._setup.private_registry_full_server
             content = pattern.sub(replacement, content)
 
             # Write the modified content back to the temporary operator file
@@ -418,9 +447,11 @@ class Upgrade:
         else:
             progress.log("IBM Content Assistant Content Operator is being upgraded using the IBM Entitlement Registry")
             progress.log()
+            self._logger.info(f"FileNet Content Management Operator is being upgraded using the IBM Entitlement Registry")
             if self._setup.runtime_mode == "dev":
                 progress.log("Using dev registry for IBM Content Assistant Operator upgrade")
                 progress.log()
+                self._logger.info(f"Using dev registry for FileNet Content Management Operator upgrade")
                 pattern = re.compile(re.escape(registry_in_file + '/cpopen') + r'\b')
                 replacement = "cp.stg.icr.io" + '/cp'
                 content = pattern.sub(replacement, content)
@@ -431,6 +462,7 @@ class Upgrade:
 
         progress.log(f"Applying/Patching FileNet Operator Deployment")
         progress.log()
+        self._logger.info(f"Applying/Patching FileNet Operator Deployment")
 
         self._kube.apply_cluster_resource_files(
             resource_file=self.tmp_file_paths["operator.yaml"], resource_type="Deployment",
@@ -555,12 +587,14 @@ class Upgrade:
         tuple: A tuple containing the updated CR details and a list of updates made.
         """
         try:
+            self._logger.info(f"Updating parameters in the current CR with latest values")
             cr_details = self._current_cr.copy()
             fc_template_cr = self.required_file_paths["ibm_content_assistant_full_cr.yaml"]
             update_list = []
 
             try:
                 # Get the Full Custom Resource Template for updated release
+                self._logger.info(f"Gettin full CR template for the current release")
                 with open(fc_template_cr, 'r') as yaml_file:
                     fc_template_cr_details = yaml.safe_load(yaml_file)
             except Exception as e:
@@ -568,6 +602,7 @@ class Upgrade:
 
             # TODO: Check for "int" type resource values and update to string
             # Update release
+            self._logger.info(f"Updating release label")
             if is_key_present(dictionary=cr_details, key="release"):
                 release = fc_template_cr_details["metadata"]["labels"][
                     "release"]
@@ -575,6 +610,7 @@ class Upgrade:
                 update_list.append(f"Updated release label to {release}")
 
             # Update AppVersion
+            self._logger.info(f"Updating release appVersion and license")
             if is_key_present(dictionary=cr_details, key="appVersion"):
                 if cr_details["spec"]["appVersion"] == "21.0.3":
                     cr_details["spec"]["license"] = {}
@@ -584,21 +620,20 @@ class Upgrade:
                 cr_details["spec"]["appVersion"] = app_version
                 update_list.append(f"Updated appVersion to {app_version}")
 
-            # Update image tags if present
-            if is_key_present(cr_details, "tag") and is_key_present(cr_details, "repository"):
-                update_list.append("Updated component image tags")
-                for key in ["repository", "tag"]:
-                    # getting all nested paths in the yaml where tag and repository is present
-                    key_results = find_keys_and_structures(dictionary=cr_details, key=key)
-                    if key_results:
-                        for nested_structure, path, key in key_results:
-                            try:
-                                update_value_by_path(dictionary1=cr_details, path=path,
-                                                     dictionary2=fc_template_cr_details, logger=self._logger)
-                            except KeyError as e:
-                                self._logger.info(e)
+            # Remove the image tags if present in the CR
+            self._logger.info(f"Removing image tags")
+            if is_key_present(cr_details, "tag"):
+                key_results = find_keys_and_structures(dictionary=cr_details, key="tag")
+                self._logger.info(key_results)
+                for nested_structure, path, key in key_results:
+                    try:
+                        delete_key_by_path(cr_details, path, key, logger=self._logger)
+                    except KeyError as e:
+                        self._logger.info(e)
+                update_list.append("Removed older tag")
             
             # Check if component boolean list exists 
+            self._logger.info(f"Updating component list")
             if not is_key_present(cr_details, key="content_optional_components"):
                 self._logger.info("No content_optional_components found in custom resource file")
                 # Copy entire component boolean structure 
@@ -636,6 +671,7 @@ class Upgrade:
 
             # Update resource requests and limits
             # TODO: Make sure limits are higher than currently listed
+            self._logger.info(f"Updated component resource requests and limits")
             if is_key_present(cr_details, key="requests") and is_key_present(cr_details, key="limits"):
                 update_list.append("Updated component resource requests and limits")
                 resources_results = find_keys_and_structures(dictionary=cr_details, key="requests")
@@ -668,6 +704,7 @@ class Upgrade:
 
             # Disable init and verify
             # Takes into account the OLM and script format
+            self._logger.info(f"Disabling initialization and verification")
             try:
                 if is_key_present(cr_details, key="olm_sc_content_initialization"):
                     update_list.append("Disabled Content Initialization")
@@ -696,6 +733,7 @@ class Upgrade:
                     "Exception while updating the initialization and verification fields and sections", e)
 
             # Removing the existing resource version and uid
+            self._logger.info(f"Removing exisitng status field")
             if is_key_present(cr_details, key="status"):
                 update_list.append("Removed status field")
                 cr_details.pop("status")
@@ -781,7 +819,8 @@ class Upgrade:
             upgrade_version = self._version_details["version"]
 
             progress.log()
-            progress.log(Panel.fit("Scaling down IBM FileNet Content Manager Deployments", style="green"))
+            progress.log(Panel.fit("Scaling down IBM Content Assistant Deployments", style="green"))
+            self._logger.info(f"Scaling down IBM Content Assistant Deployments")
 
             cr_name = self._cr_details["name"]
             deployments = self._kube.get_deployments_by_owner_reference(
@@ -789,33 +828,39 @@ class Upgrade:
                 owner_reference_name=cr_name)
 
             progress.log()
-            progress.log(f"Scaling down current IBM Content Assistant Standalone Operator pod before upgrading")
+            progress.log(f"Scaling down current IBM Content Assistant Operator pod before upgrading")
+            self._logger.info(f"Scaling down current IBM Content Assistant Operator pod before upgrading")
 
             # Scale down older operator pod before upgrading
             operator_deployment = self._operator_details["deployment"]
             self._kube.scale_operator_deployment(namespace=self._namespace,
                                                  deployment_name=operator_deployment,
                                                  scale="down")
+
         except Exception as e:
             progress.log()
             progress.log(
                 Text(f"Error in scaling down pods function - {e}", style="bold red"))
+            self._logger.info(f"Error in scaling down pods function - {e}")
 
     # Ask if the CR should be updated, if user does not want to update CR we will just update the Operators
     # IF CR is to be updated then we will scale pods down , apply the latest CR and then upgrade the operator
     def apply_upgraded_cr(self, progress=None):
         progress.log()
         progress.log(Panel.fit("Applying Upgraded IBM Content Assistant Custom Resource", style="cyan"))
+        self._logger.info(f"Applying Upgraded IBM Content Assistant Custom Resource")
         cr_applied = self._kube.apply_cluster_resource_files(
             resource_file=self._updated_cr_template_save_location, resource_type="Custom Resource",
             namespace=self._namespace)
         if not cr_applied:
             progress.log()
             progress.log(Text("Error occurred while applying the upgraded Custom Resource", style="bold red"))
+            self._logger.info(f"Error occurred while applying the upgraded Custom Resource")
             exit(1)
         else:
             progress.log()
             progress.log(Text("Upgraded Custom Resource applied successfully", style="bold green"))
+            self._logger.info(f"Upgraded Custom Resource applied successfully")
 
     # Function to display the post upgrade steps
     # Jason to fill this up as part of the upgrade steps
