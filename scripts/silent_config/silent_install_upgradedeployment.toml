@@ -2,18 +2,17 @@
 #
 # Licensed Materials - Property of IBM
 #
-# (C) Copyright IBM Corp. 2025. All Rights Reserved.
+# (C) Copyright IBM Corp. 2024. All Rights Reserved.
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
 #
-###############################################################
-
 ###############################################################################
 
 # ####################################################
 # ##                   License                     ##
 # ####################################################
+
 
 # IBM Content Assistant Client Managed Software license information here: https://ibm.biz/CAS_License_1_0_0
 # IBM Software Notices here: https://ibm.biz/CAS_Notices_1_0_0
@@ -27,7 +26,7 @@ LICENSE_ACCEPT = false
 # ##                   Platform                     ##
 # ####################################################
 
-# Platform of choice - Valid values: [1; 2]
+# Platform of choice - Valid values: [1; 2;]
 # 1. OCP
 # 2. CNCF
 PLATFORM = 1
@@ -41,15 +40,17 @@ PLATFORM = 1
 NAMESPACE = "<Namespace>"
 
 # ####################################################
-# ##            Registry Authentication             ##
+# ##            Cluster Configuration               ##
 # ####################################################
 
-# Key used to authenticate with IBM Entitlement Registry
-# Check the link on how to obtain an IBM Entitlement key https://www.ibm.com/docs/SSSUG3T_1.0.0/com.ibm.icacm.install/icacm_topics/tsk_images_enterp_entitled.html
-ENTITLEMENT_KEY = "<IBMEntitlementKey>"
+# OCP Upgrade Only
+# The FileNet Content Manager Operator Catalog Source can be installed with the follow options
+#   Private Catalog - Install the catalog in the same target namespace
+#   Global Catalog - Install the catalog in the openshift-marketplace namespace
+GLOBAL_CATALOG = false
 
-# CNCF Deploy Only
-# The IBM Content Assistant Operator Image can be installed with the follow options
+# CNCF Upgrade Only
+# The FileNet Content Manager Operator Image can be installed with the follow options
 #    Online - Pull the Operator image from the IBM Entitlement Registry
 #    Private - Pull the Operator image from a Private Registry
 PRIVATE_REGISTRY = false
@@ -73,11 +74,6 @@ PRIVATE_REGISTRY_SSL_ENABLED = true
 # Disable certificate verification by using the --tls-verify=false flag
 PRIVATE_REGISTRY_SSL_CRT_PATH = "/path/to/my/certificate.crt"
 
-# ####################################################
-# ##            Cluster Configuration               ##
-# ####################################################
-
-# The IBM Content Assistant Operator Catalog Source can be installed with the follow options
-#   Private Catalog - Install the catalog in the same target namespace
-#   Global Catalog - Install the catalog in the openshift-marketplace namespace
-GLOBAL_CATALOG = false
+# Option to scale down all deployments to zero and apply the updated CR
+# This option is useful when you want to update the CR and not start the upgrade process
+APPLY_CR = true

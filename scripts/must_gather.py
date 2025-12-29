@@ -40,7 +40,7 @@ from helper_scripts.utilities.interface import (
     display_prereq_passed, mustgather_details, mustgather_network_results)
 from helper_scripts.utilities.utilities import prereq_checks
 
-__version__ = "1.1.3"
+__version__ = "2.0.0"
 
 app = typer.Typer()
 
@@ -115,15 +115,19 @@ def create_mustgather_folder(progress, platform, components, collect_sensitive_d
                              operator_present=True):
     progress.log()
     progress.log("Creating MustGather folder")
+    state["logger"].info("Creating MustGather folder")
+
     if os.path.exists(os.path.join(os.getcwd(), "MustGather")):
         shutil.rmtree(os.path.join(os.getcwd(), "MustGather"))
 
     mustgather_folder = os.path.join(os.getcwd(), "MustGather")
 
     os.mkdir(mustgather_folder)
+    state["logger"].info(f"Created MustGather folder: {mustgather_folder}")
 
     progress.log()
     progress.log("Creating MustGather components subfolders")
+    state["logger"].info(f"Creating MustGather components subfolders")
 
     folder_names = [
         "cluster"
@@ -158,6 +162,7 @@ def create_mustgather_folder(progress, platform, components, collect_sensitive_d
     progress.log()
     progress.log(Panel.fit("MustGather folder created", style="bold green"))
     progress.log()
+    state["logger"].info(f"Created MustGather components subfolders")
     return mustgather_folder
 
 
@@ -166,6 +171,7 @@ def tar_mustgather_folder(mustgather_folder, progress, namespace):
     try:
         namespace_no_spaces = re.sub(r"\s+", "", namespace)
         progress.log(Panel.fit("Generating MustGather tarfile", style="bold green"))
+        state["logger"].info(f"Generating MustGather tarfile")
         now = datetime.now()
         dt_string = now.strftime("%Y-%m-%d_%H-%M")
         tar_file_name = mustgather_folder + "_"  + namespace_no_spaces + "_" + dt_string + ".tar.gz"
@@ -181,7 +187,9 @@ def tar_mustgather_folder(mustgather_folder, progress, namespace):
 
         with tarfile.open(tar_file_name, "w:gz") as tar:
             tar.add(mustgather_folder, arcname=os.path.basename(mustgather_folder))
+        state["logger"].info(f"Generated MustGather tarfile: {tar_file_name}")
         shutil.rmtree(mustgather_folder)
+        state["logger"].info(f"Removed MustGather folder: {mustgather_folder}")
     except Exception as e:
         state["logger"].exception("Unable to tar logs, caught %s Exiting...", e)
 
@@ -200,6 +208,15 @@ def main(
             help="Perform Dry Run of the mustgather script",
             rich_help_panel="Customization and Utils")] = False):
 
+    if click.get_current_context().invoked_subcommand == "networkpolicy":
+        return
+    """
+    IBM Content Assistant MustGather
+    """
+    clear(console)
+    display_mode_version("Gather All",
+                         "IBM Content Assistant MustGather for Container Deployment")
+
     if verbose:
         state["verbose"] = True
         FILE_LOG_LEVEL = logging.DEBUG
@@ -214,32 +231,27 @@ def main(
     if dryrun:
         state["dryrun"] = True
 
-    if click.get_current_context().invoked_subcommand == "networkpolicy":
-        return
-    """
-    IBM Content Assistant MustGather
-    """
-    clear(console)
-    display_mode_version("Gather All",
-                         "IBM Content Assistant MustGather for Container Deployment")
-
 
     checks = ["connection"]
 
+    state["logger"].info(f"Checking prerequisites")
     missing_tools, results, files = prereq_checks(logger=state["logger"], prereqs=checks)
 
     # Print table of prerequisites that are missing
     if len(missing_tools) > 0 or len(files) > 0:
         layout = display_issues(tools=missing_tools, descriptors=files)
         print(layout)
+        state["logger"].info(f"All prerequisites did not pass.")
         exit(1)
     else:
         prereq_summary = display_prereq_passed(results)
+        state["logger"].info(f"All prerequisites passed.")
         print(prereq_summary)
         print()
 
     if state["silent"]:
         # this is the user details object which does pre-checks and collects some necessary details
+        state["logger"].info(f"Executing in silent mode.")
         silent_path = os.path.join("silent_config", "silent_install_mustgather.toml")
         setup = sg.SilentGatherOptions(state["logger"], silent_path, script_type="must_gather")
         setup.silent_parse_mustgather_operator_file()
@@ -253,11 +265,13 @@ def main(
 
     kube = k.KubernetesUtilities(state["logger"])
     # Collect CR details
+    state["logger"].info(f"Collecting CR details")
     custom_resources = kube.get_deployment_cr(namespace=namespace, logger=state["logger"])
     components = []
     deployment_details = {}
 
     # Collect Operator details
+    state["logger"].info(f"Collecting Operator details")
     operator_deployment = "ibm-content-assistant-operator"
     operator_details = kube.get_operator_details(namespace, operator_deployment)
 
@@ -266,6 +280,7 @@ def main(
     if len(custom_resources) == 0:
         cr_present = False
         print("[prompt.invalid] No custom resources found.")
+        state["logger"].info(f"No custom resources found.")
     else:
         cr_present = True
         deployment_details = kube.cr_details
@@ -274,8 +289,11 @@ def main(
 
         if not state["silent"]:
             clear(console)
+            state["logger"].info(f"Collecting mustgather components.")
             setup.collect_mustgather_components(deployments, version)
             components = list(setup.components)
+            state["logger"].info(f"Components for mustgather: {components}")
+
         else:
             components = list(setup.components)
 
@@ -291,6 +309,8 @@ def main(
         exit()
     clear(console)
     print(Panel.fit("Starting IBM Content Assistant MustGather", style="cyan"))
+    state["logger"].info(f"Starting FileNet Content Manager MustGather")
+
     with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -301,6 +321,7 @@ def main(
             transient=False,
     ) as progress:
         task1 = progress.add_task("[cyan]Collecting Cluster Info", total=None)
+        state["logger"].info(f"Collecting cluster information")
         # Check is operator is present
         if operator_present:
             task2 = progress.add_task("[purple]Collecting IBM Content Assistant Operator Info", total=None)
@@ -329,6 +350,8 @@ def main(
                 deployment_dict = {}
                 for component in components:
 
+                    # Get deployments for each component
+                    state["logger"].info(f"Getting deployments for component: {component}")
                     if component == "genai_connector":
                         deployment_dict[component] = filter(lambda x: filter_deployments(x, "content-assistant-deployment"),
                                                             resource_type_dict["deployment"])
@@ -383,52 +406,69 @@ def main(
 
             if cr_present:
                 # Download CR
+                state["logger"].info(f"Downloading CR file")
                 must_gather.write_cr_file(progress, deployment_details["name"])
 
                 # Collect all Deployments
+                state["logger"].info(f"Collecting all deployments")
                 if len(resource_type_dict["deployment"]) > 0:
                     deployments = resource_type_dict["deployment"]
                     must_gather.collect_deployment_info(progress, deployments)
 
+                # Collect all PodDisruptionBudget Info
+                state["logger"].info(f"Collecting PodDisruptionBudget (PDB) information")
+                if resource_type_dict.get("pod_disruption_budget"):
+                    pdbs = resource_type_dict["pod_disruption_budget"]
+                    must_gather.collect_pdb_info(progress, pdbs)
+
+                # Collect all HorizontalPodAutoscaler Info
+                state["logger"].info(f"Collecting HorizontalPodAutoscaler (HPA) information")
+                if resource_type_dict.get("horizontal_pod_autoscaler"):
+                    hpas = resource_type_dict["horizontal_pod_autoscaler"]
+                    must_gather.collect_hpa_info(progress, hpas)
+
                 # Collect all StorageClass Info
+                state["logger"].info(f"Collecting all storage class information")
                 if len(storage_class) > 0:
                     must_gather.collect_storage_class_info(progress, storage_class)
 
                 # Collect all PersistentVolume Info
+                state["logger"].info(f"Collecting persistent volume information")
                 if len(resource_type_dict["persistent_volume_claim"]) > 0:
                     pvcs = resource_type_dict["persistent_volume_claim"]
                     must_gather.collect_pvc_info(progress, pvcs)
 
                 # Collect all Service Info
+                state["logger"].info(f"Collecting services information")
                 if len(resource_type_dict["service"]) > 0:
                     services = resource_type_dict["service"]
                     must_gather.collect_service_info(progress, services)
 
                 # Collect all NetworkPolicy Info
+                state["logger"].info(f"Collecting network policy information")
                 if len(resource_type_dict["network_policy"]) > 0:
                     network_policies = resource_type_dict["network_policy"]
                     must_gather.collect_network_policy_info(progress, network_policies)
 
-                # Collect all Horizontal Pod Autoscaler Info
-                if len(resource_type_dict["horizontal_pod_autoscaler"]) > 0:
-                    hpas = resource_type_dict["horizontal_pod_autoscaler"]
-                    must_gather.collect_hpa_info(progress, hpas)
-
                 if platform == "other":
+                    state["logger"].info(f"Collecting ingresses information")
                     if len(resource_type_dict["ingress"]) > 0:
                         ingress = resource_type_dict["ingress"]
                         must_gather.collect_ingress_info(progress, ingress)
                 else:
+                    state["logger"].info(f"Collecting routes information")
                     if len(resource_type_dict["routes"]) > 0:
                         routes = resource_type_dict["routes"]
                         must_gather.collect_route_info(progress, routes)
 
                 if collect_sensitive_data:
+                    state["logger"].info(f"Collecting secrets information")
                     secrets = resource_type_dict["secret"]
                     secrets.extend(user_secrets)
                     if len(secrets) > 0:
                         must_gather.collect_secret_info(progress, secrets)
 
+                    state["logger"].info(f"Collecting ConfigMaps information")
                     configmaps = resource_type_dict["config_map"]
                     configmaps.extend(user_configmaps)
                     if len(configmaps) > 0:
@@ -455,6 +495,7 @@ def main(
                         progress.log()
                         progress.log(Panel.fit("No Pods Found for Selected Components", style="bold red"))
                         progress.log()
+                        state["logger"].info(f"No Pods Found for Selected Components")
                         progress.advance(task4)
 
             tar_mustgather_folder(mustgather_folder, progress, namespace)
@@ -492,19 +533,20 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
     namespace = setup.namespace
     operator_details = kube.get_operator_details(namespace, operator_deployment)
     state["logger"].info(f"Operator: {operator_details}")
-    np_folder = os.path.join(os.getcwd(), "CASNetworkPolicies")
-    must_gather = mg.MustGather(console, namespace, state["logger"], np_folder, deployment_details, operator_details,
-                                kube)
+    np_folder = os.path.join(os.getcwd(), "CASNetworkPolicies", namespace)
+    must_gather = mg.MustGather(console, namespace, state["logger"], np_folder, deployment_details, operator_details, kube)
     if apply:
         if os.path.exists(np_folder):
             print()
             print(Panel.fit(Text(f"Found {os.path.basename(np_folder)} Folder. Applying existing network policies"), style="cyan"))
             print()
+            state["logger"].info(f"Found {os.path.basename(np_folder)} Folder. Applying existing network policies")
             must_gather.auto_apply_networkpolicy()
         else:
             print()
             print(Panel.fit(Text(f"{os.path.basename(np_folder)} Folder not found. Starting Copying Network policy Templates"), style="cyan"))
             print()
+            state["logger"].info(f"Folder: {os.path.basename(np_folder)} not found. Applying existing network policies")
             with Progress(SpinnerColumn(),
                         TextColumn("[progress.description]{task.description}"),
                         BarColumn(),
@@ -512,12 +554,8 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
                         console=console) as progress:
                 if operator_details:
                     task1 = progress.add_task("[cyan]Collect Network Policies", total=None)
-                    collected = must_gather.collect_network_policy_templates(progress,operator_details)
-
-                    if not collected:
-                        progress.update(task1, total=1, completed=1)
-                        raise typer.Exit()
-
+                    state["logger"].info(f"Collecting network policies")
+                    must_gather.collect_network_policy_templates(progress, operator_details)
                     progress.update(task1, total=1, completed=1)
                 else:
                     print(Panel.fit(Text("IBM Content Assistant Operator not found in namespace."),style="bold red"))
@@ -526,6 +564,7 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
             # Output Network Policy Template folder
             print()
             print(Panel.fit(Text("Applying downloaded network policies"), style="cyan"))
+            state["logger"].info(f"Applying downloaded network policies")
             print()
             must_gather.auto_apply_networkpolicy()
         raise typer.Exit()
@@ -545,26 +584,26 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
             except Exception as e:
                  state["logger"].exception("Unable to tar network policies, caught %s Exiting...", e)
 
+        if len(operator_details.get("pods", 0)) == 0:
+            print()
+            print(Panel.fit(Text("FileNet Content Manager Operator not found in namespace."), style="bold red"))
+            state["logger"].info(f"FileNet Content Manager Operator not found in namespace.")
+            raise typer.Exit()
+
         print()
-        print(Panel.fit(Text("Starting Copying Network policy Templates"), style="cyan"))
+        print(Panel.fit(Text("Starting Copying Network Policy Templates"), style="cyan"))
         print()
+        state["logger"].info(f"Starting Copying Network Policy Templates")
+
         with Progress(SpinnerColumn(),
                     TextColumn("[progress.description]{task.description}"),
                     BarColumn(),
                     transient=True,
                     console=console) as progress:
-            if operator_details:
-                task1 = progress.add_task("[cyan]Collect Network Policies", total=None)
-                collected = must_gather.collect_network_policy_templates(progress,operator_details)
 
-                if not collected:
-                    progress.update(task1, total=1, completed=1)
-                    raise typer.Exit()
-
-                progress.update(task1, total=1, completed=1)
-            else:
-                print(Panel.fit(Text("IBM Content Assistant Operator not found in namespace."),style="bold red"))
-                raise typer.Exit()
+            task1 = progress.add_task("[cyan]Collect Network Policies", total=None)
+            must_gather.collect_network_policy_templates(progress,operator_details)
+            progress.update(task1, total=1, completed=1)
 
 
         results = mustgather_network_results(np_folder, namespace)
@@ -573,6 +612,7 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
 
         apply_networkpolicy = Confirm.ask("Do you want to apply the retrieved network policies to your cluster?", default=False)
         if apply_networkpolicy:
+            state["logger"].info(f"Applying the Network Policies.")
             must_gather.auto_apply_networkpolicy()
         raise typer.Exit()
 

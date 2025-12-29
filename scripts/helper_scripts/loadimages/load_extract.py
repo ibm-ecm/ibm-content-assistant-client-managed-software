@@ -47,15 +47,16 @@ class LoadExtract:
         def __init__(self, channel: Channel):
             self._channel = channel
 
-    def __init__(self, console, logger=None, silent=False, dev=False, airgap=False, folder_path="", version_data=None):
+    def __init__(self, console, logger=None, silent=False, dev=False, airgap=False, folder_path="", version_data=None, tls_verify=True):
         if version_data is None:
             version_data = {}
         self._logger = logger
-        self._kubernetes_utilities = k.KubernetesUtilities(logger)
+        self._kube = k.KubernetesUtilities(logger)
         self._console = console
         self._dev = dev
         self._silent_mode = silent
         self._airgap = airgap
+        self._tls_verify = tls_verify
 
         if 'VERSION' in version_data:
             self._cas_version = version_data['VERSION']
@@ -71,12 +72,12 @@ class LoadExtract:
         self._image_details_folder = folder_path
         self._image_details_file = os.path.join(self._image_details_folder, "imageDetails.toml")
 
-        self._apps_v1_api = self._kubernetes_utilities.apps_v1
-        self._core_v1_api = self._kubernetes_utilities.core_v1
-        self._custom_api = self._kubernetes_utilities.custom_api
+        self._apps_v1_api = self._kube.apps_v1
+        self._core_v1_api = self._kube.core_v1
+        self._custom_api = self._kube.custom_api
 
         # Repo information
-        self._private_registry_server = ""
+        self._private_registry_full_server = ""
 
         # file paths from container samples
         self._content_pattern_path = os.path.join(os.path.dirname(os.getcwd()), "descriptors",
@@ -105,7 +106,7 @@ class LoadExtract:
             self._casepackage_url = "https://raw.githubusercontent.com/IBM/cloud-pak/master/repo/case/ibm-content-assistant/index.yaml"
 
         self._case_versions = {}
-        self._case_versions_parsed = {}
+        self._case_versions_list = []
 
         self._casepackage_version = "1.0.0"
         self._casename = "ibm-content-assistant"
@@ -138,7 +139,7 @@ class LoadExtract:
 
     @property
     def case_versions(self):
-        return self._case_versions_parsed
+        return self._case_versions_list
 
     @property
     def number_of_images(self):
@@ -159,12 +160,12 @@ class LoadExtract:
     # Getter for private registry server
     @property
     def private_registry_server(self):
-        return self._private_registry_server
+        return self._private_registry_full_server
 
     # Setter for private registry server
     @private_registry_server.setter
     def private_registry_server(self, value):
-        self._private_registry_server = value
+        self._private_registry_full_server = value
 
     @staticmethod
     def __write_property_table(section, key, value, note, ):
@@ -179,6 +180,7 @@ class LoadExtract:
 
     # Create the airgap variables file
     def create_airgap_details_file(self):
+        self._logger.info(f"Creating the airgap details file: {self._airgap_details_file}")
         # Create the Airgap Details folder
         self.__create_airgap_details_folder()
 
@@ -202,6 +204,7 @@ class LoadExtract:
     # Function to collect Case Versions
     def collect_case_versions(self):
         try:
+            self._logger.info(f"Collecting the case versions")
             # Create tmp folder
             if not os.path.exists(os.path.join(os.getcwd(), ".tmp")):
                 os.mkdir(os.path.join(os.getcwd(), ".tmp"))
@@ -231,90 +234,60 @@ class LoadExtract:
 
             # Return the case versions
             self._case_versions = case_versions
-            case_versions_parsed = self.__parse_case_versions()
-            self._case_versions_parsed = case_versions_parsed
+            case_versions_parsed = case_versions['versions'].keys()
+            self._case_versions_list = case_versions_parsed
         except Exception as e:
             self._logger.info(f"Exception while trying to collect case versions - {e}")
-            self._case_versions_parsed = {}
+            self._case_versions_list = []
 
 
     # Function to parse caseVersions
     def __parse_case_versions(self):
+        self._logger.info(f"Parsing the case versions")
         case_versions = self._case_versions
-        self._logger.info(f"Parsing CASE Package index.yaml")
-        self._logger.info(f"Available CASE Package Versions: {case_versions}")
-        case_versions_list = []
+        case_versions_dict = {}
 
-        case_version_list = case_versions['versions'].keys()
+        lowest_version = version.parse("5.5.9")
 
-        # lowest_version = version.parse("1.0.0")
-        #
-        # # Loop through the caseVersions
-        # for key, data in case_versions['versions'].items():
-        #     # Check if the appVersion is greater or equal 5.5.9
-        #     if version.parse(self._cas_version) >= lowest_version:
-        #         # Add the appVersion to the caseVersionsDict
-        #         if self._cas_version not in case_versions_dict:
-        #             case_versions_dict[self._cas_version] = key
-        #         else:
-        #             # Check if the casePackageVersion is greater than the current version
-        #             if version.parse(key) > version.parse(case_versions_dict[self._cas_version]):
-        #                 case_versions_dict[self._cas_version] = key
+        # Loop through the caseVersions
+        for key, data in case_versions['versions'].items():
+            # Get the appVersion
+            app_version = data["appVersion"].split("-")[0]
 
+            # Check if the appVersion is greater or equal 5.5.9
+            if version.parse(app_version) >= lowest_version:
+                # Add the appVersion to the caseVersionsDict
+                if app_version not in case_versions_dict:
+                    case_versions_dict[app_version] = key
+                else:
+                    # Check if the casePackageVersion is greater than the current version
+                    if version.parse(key) > version.parse(case_versions_dict[app_version]):
+                        case_versions_dict[app_version] = key
 
-        self._case_versions_parsed = case_version_list
-        return case_version_list
+        self._case_versions_list = case_versions_dict
+        return case_versions_dict
 
     # Function to select the casePackageVersion
-    def select_case_package_version(self):
-        print(Panel.fit("CASE Package Versions"))
+    def validate_case_package_version(self, case_version=None):
+        print(Panel.fit("CASE Package Version Selection"))
+        self._logger.info(f"Selecting the case package versions")
 
-        num_version = len(self._case_versions_parsed)
-        choices = self._case_versions_parsed
+        case_versions_list = self._case_versions_list
 
-        if self._silent_mode:
+        if case_version:
             print()
-            print("Select a CASE Package Version")
-            print("The CASE Package Version determines the version of the CASE package that will be installed.")
-            print("The list below shows the latest CASE Package for each version of the FileNet Content Manager.")
+            print(Panel.fit(Text(f"Selected CASE Package Version: {case_version}", style="bold cyan")))
             print()
-            print("Select a CASE Package Version")
-            for i, choice in enumerate(choices, 1):
-                print(f"{i}. {choice})")
 
-            result = choices.index(self._cas_version) + 1
+        # If case_version is not in the case_versions_list, output warning
+        if case_version and case_version not in case_versions_list:
+            print()
+            print(Panel.fit(Text(f"Warning: The selected CASE Package Version: {case_version} is not in the available versions list.\n"
+                                 f"CASEPackage download will proceed without validation"), style="bold yellow"))
+            print()
 
-            if 1 <= result <= num_version:
-                self._casepackage_version = self._case_versions_parsed[choices[result - 1]]
-            else:
-                print(f"\n[prompt.invalid]Number must be between [[b]1[/b] and [b]{num_version}[/b]]")
-                exit()
-
-        else:
-
-            while True:
-                print()
-                print("Select a CASE Package Version")
-                print("The CASE Package Version determines the version of the CASE package that will be installed.")
-                print("The list below shows the latest CASE Package for each version of the FileNet Content Manager.")
-                print()
-                print("Select a CASE Package Version")
-                for i, choice in enumerate(choices, 1):
-                    print(f"{i}. {choice})")
-
-                result = IntPrompt.ask(f'Enter a valid option [[b]1[/b] and [b]{num_version}[/b]]',
-                                       default=choices.index(self._cas_version) + 1)
-
-                if 1 <= result <= num_version:
-                    self._casepackage_version = self._case_versions_parsed[result]
-                    break
-
-                print(f"\n[prompt.invalid]Number must be between [[b]1[/b] and [b]{num_version}[/b]]")
-
-        print()
-        print(Panel.fit(Text(f"Selected CASE Package Version: {self._casepackage_version}", style="bold green")))
-        print()
-
+        self._logger.info(f"Selected case package version: {self._casepackage_version}")
+        self._casepackage_version = case_version
         return self._casepackage_version
 
     # Function to create the imageDetails folder
@@ -350,18 +323,18 @@ class LoadExtract:
             os.mkdir(self._airgap_details_folder)
 
     # Function to retrieve all component tag and repositories
-    def parse_assisant_template(self):
+    def parse_content_template(self):
+        self._logger.info(f"Retrieving the component tags and repositories")
         try:
             with open(self._content_pattern_path, 'r') as file:
                 content_template_yaml = yaml.safe_load(file)
 
         except Exception as e:
             print(f"Error occurred while reading YAML file {self._content_pattern_path}: {e}")
+            self._logger.info(f"Error occurred while reading YAML file {self._content_pattern_path}: {e}")
 
         if content_template_yaml:
             keys_to_parse = ['repository', 'tag']
-
-
             parsed_keys = parse_yaml_for_keys(content_template_yaml, keys_to_parse)
 
             num_components = len(parsed_keys['repository'])
@@ -381,21 +354,34 @@ class LoadExtract:
 
                 # Calculate Repository
                 repository = parsed_keys['repository'][i]
-                if self._dev:
-                    repository = repository.replace("cp.icr.io", "cp.stg.icr.io")
                 component_dict['repository'] = repository.lower()
 
                 # Add the component dictionary to the repo_tag_list
                 self._repo_tag_list.append(component_dict.copy())
 
+            self._logger.info(self._repo_tag_list)
+
+            # Modify repositories for dev environment
+            # Loop through each component dictionary in the repo_tag_list
+            # Replace the repository URL with the dev URL
+            if self._dev:
+                for component_dict in self._repo_tag_list:
+                    component_dict["repository"] = component_dict["repository"].replace("cp.icr.io","cp.stg.icr.io")
+
+            # # Add the component dictionary to the repo_tag_list
+            # self._repo_tag_list.append(component_dict.copy())
+
     # Function to parse and retrieve operator image tag and repository
     def parse_operator_template(self):
+        self._logger.info(f"Getting operator digest, tag and repository")
         try:
             with open(self._operator_path, 'r') as file:
                 operator_template_yaml = yaml.safe_load(file)
 
         except Exception as e:
             print(f"Error occurred while reading YAML file {self._operator_path}: {e}")
+            self._logger.info(f"Error occurred while reading YAML file {self._operator_path}: {e}")
+
 
         component_dict = {}
 
@@ -423,6 +409,7 @@ class LoadExtract:
     # Function to create the TOML file
     def create_image_details_file(self):
 
+        self._logger.info(f"Creating file with image details")
         # Create the CNCF Image Details folder
         self.__create_cncf_image_details_folder()
 
@@ -496,6 +483,7 @@ class LoadExtract:
 
     # Function to enable generate image mirror config
     def generate_mirror_manifests(self, progress, task):
+        self._logger.info(f"Generating mirror manifests")
         try:
             env_vars = self._airgap_vars.copy()
             env_vars["PATH"] = os.environ["PATH"]
@@ -527,6 +515,7 @@ class LoadExtract:
 
     # Private Function to parse channel files
     def __parse_channel_files(self, file_path=None) -> list:
+        self._logger.info(f"Getting the channels")
         try:
             with open(file_path, 'r') as file:
                 image_set = yaml.safe_load(file)
@@ -549,6 +538,7 @@ class LoadExtract:
     def update_image_channels(self, channels=None):
         try:
 
+            self._logger.info(f"Updating the channels")
             env_vars = self._airgap_vars.copy()
             env_vars["HOME"] = os.environ["HOME"]
 
@@ -574,6 +564,7 @@ class LoadExtract:
             print()
             print(Panel.fit(Text("Channels updated successfully", style="bold green")))
             print()
+            self._logger.info(f"Channels updated successfully")
 
             return True
         except Exception as e:
@@ -585,6 +576,7 @@ class LoadExtract:
         try:
             print()
             print(Panel.fit("Airgap Mirror Channels"))
+            self._logger.info(f"Getting the channels to be mirrored")
 
             if self._silent_mode:
 
@@ -595,7 +587,6 @@ class LoadExtract:
 
                 if not self._all_channel:
                     # Calculate channel based on CAS Version
-
                     current_channel = self.AirgapChannel.Channel(self._cas_version).name
                     choices_set.add(current_channel)
                 else:
@@ -658,25 +649,28 @@ class LoadExtract:
         try:
             progress.log(Panel.fit(Text("Starting Cluster Setup"), style="bold cyan"))
             progress.log()
+            self._logger.info(f"Starting the cluster setup")
 
             progress.log(f"Applying ImageContentSourcePolicy to the cluster")
             progress.log()
+            self._logger.info(f"Applying the ICSP to the cluster")
 
             env_vars = self._airgap_vars.copy()
+            env_vars["HOME"] = os.environ["HOME"]
 
             case_name = env_vars["CASE_NAME"]
             case_version = env_vars["CASE_VERSION"]
             pak_home = env_vars["IBMPAK_HOME"]
-            env_vars["HOME"] = os.environ["HOME"]
 
             image_mirror_policy_file = os.path.join(pak_home, '.ibm-pak', 'data', 'mirror', case_name, case_version, 'image-content-source-policy.yaml')
 
-            self._kubernetes_utilities.apply_cluster_resource_files(
+            self._kube.apply_cluster_resource_files(
                 resource_file=image_mirror_policy_file,
                 resource_type="image policy")
 
             progress.log(Text(f"ImageContentSourcePolicy applied to the cluster successfully!", style="bold green"))
             progress.log()
+            self._logger.info(f"ICSP is applied successfully to the cluster")
 
 
             progress.update(task, advance=1)
@@ -693,6 +687,7 @@ class LoadExtract:
         try:
             progress.log(Panel.fit(Text("Starting Airgap Mirror"), style="bold cyan"))
             progress.log()
+            self._logger.info(f"Starting airgap mirroring")
 
             env_vars = self._airgap_vars.copy()
             env_vars["PATH"] = os.environ["PATH"]
@@ -748,6 +743,7 @@ class LoadExtract:
 
     # Function to select channel
     def collect_image_channels(self):
+        self._logger.info(f"Collecting image channels")
         env_vars = self._airgap_vars.copy()
         env_vars["HOME"] = os.environ["HOME"]
 
@@ -758,7 +754,7 @@ class LoadExtract:
 
         selected_channels = self.select_channel(channels)
 
-        # Ff there are differences between the selected channels and the channels in the image-set-config.yaml
+        # If there are differences between the selected channels and the channels in the image-set-config.yaml
         # Update the image-set-config.yaml
         if selected_channels != channels:
             self.update_image_channels(selected_channels)
@@ -769,6 +765,7 @@ class LoadExtract:
 
     # Function to enable oc image mirror
     def enable_oc_image(self, progress, task):
+        self._logger.info(f"Enabling oc-mirror")
         try:
             env_vars = self._airgap_vars.copy()
             env_vars["PATH"] = os.environ["PATH"]
@@ -795,6 +792,7 @@ class LoadExtract:
 
     # Function to Download Case
     def download_case(self):
+        self._logger.info(f"Downloading case-package")
         try:
 
             env_vars = self._airgap_vars.copy()
@@ -849,6 +847,7 @@ class LoadExtract:
 
     # Function to copy all images to private registry
     def copy_images(self, progress, task):
+        self._logger.info(f"Copying images to the private registry")
         images_not_copied = []
         images_copied = []
 
@@ -857,34 +856,36 @@ class LoadExtract:
             repository = component["repository"]
             new_image_repo = repository.split("/")[-1]
 
-            dest_repo = f"{self._private_registry_server}/{new_image_repo}"
+            dest_repo = f"{self._private_registry_full_server}/{new_image_repo}"
 
             if "tag" in component:
                 tag = component["tag"]
                 dest_path = f"{dest_repo}:{tag}"
                 src_path = f"{repository}:{tag}"
                 image = dest_path.split("/")[-1]
+                display = f"{new_image_repo}:{tag}"
 
             elif "digest" in component:
                 digest = component["digest"]
                 dest_path = f"{dest_repo}@{digest}"
                 src_path = f"{repository}@{digest}"
                 image = f'{dest_repo.split("/")[-1]}@{digest[:12]}'
+                display = f"{new_image_repo}@{digest[:12]}"
 
-            progress.log(Panel.fit(Text(f"Copying {image}", style="bold cyan")))
+            progress.log(Panel.fit(Text(f"Copying {display}", style="bold cyan")))
             progress.log()
-
+            self._logger.info(f"Copying {display}")
             image_copied = copy_image(src_path, dest_path, progress)
             if not image_copied:
-                images_not_copied.append(f"{image}")
+                images_not_copied.append(f"{display}")
             else:
-                images_copied.append(f"{image}")
+                images_copied.append(f"{display}")
 
             progress.update(task, advance=1)
 
         self._image_push_summary["completed"] = images_copied
         self._image_push_summary["failed"] = images_not_copied
         self._image_push_summary["total"] = self._number_of_images
-        self._image_push_summary["private_registry"] = self._private_registry_server
+        self._image_push_summary["private_registry"] = self._private_registry_full_server
 
         return self._image_push_summary

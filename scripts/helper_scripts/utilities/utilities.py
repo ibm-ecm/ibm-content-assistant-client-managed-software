@@ -29,14 +29,23 @@ from ..property.read_prop import ReadPropImageTag
 from ..utilities import kubernetes_utilites as k
 
 # Function to log in to a registry using podman
-def login_to_registry_podman(registry, username, password, logger, ssl_enabled=False, ssl_cert_path=''):
+def login_to_registry_podman(registry_host, username, password, logger, ssl_enabled=False, ssl_cert_path='', registry_port='', registry_path='', tls_verify=True):
     try:
-        if ssl_enabled:
+        # Build the registry URL
+        registry = ""
+
+        if registry_host:
+            registry += registry_host
+        if registry_port:
+            registry += f":{registry_port}"
+        if registry_path:
+            registry += f"/{registry_path}"
+
+        if ssl_enabled and tls_verify:
             # Allow self-signed certificates
-            command = ["podman", "login", registry, "-u", username, "--password-stdin", "--cert-dir", ssl_cert_path,
-                       "--tls-verify=false"]
+            command = ["podman", "login", registry, "-u", username, "--password-stdin", "--cert-dir", ssl_cert_path, f"--tls-verify={tls_verify}"]
         else:
-            command = ["podman", "login", registry, "-u", username, "--password-stdin", "--tls-verify=false"]
+            command = ["podman", "login", registry, "-u", username, "--password-stdin", f"--tls-verify={tls_verify}"]
 
         # Using subprocess to run the Podman login command
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -46,7 +55,9 @@ def login_to_registry_podman(registry, username, password, logger, ssl_enabled=F
             logger.info("Login succeeded!")
             return True
         else:
-            logger.info(f"Login failed. Error: {error.decode()}")
+            logger.info(f"Login failed. {error.decode()}")
+            print()
+            print(Text(f"{error.decode()}", style="bold red"))
             return False
     except Exception as e:
         logger.info(f"Error: {e}")
@@ -131,7 +142,7 @@ def prereq_checks(logger, prereqs=None, files=None, fncm_version='5.6.0'):
                 prereq_summary["podman"] = True
 
             else:
-                logger.info("Podman not present")
+                logger.info("Podman Daemon not present")
                 missing_tools.append("Podman CLI")
 
         if "oc" in prereqs:
@@ -220,19 +231,6 @@ def prereq_checks(logger, prereqs=None, files=None, fncm_version='5.6.0'):
             except Exception as e:
                 logger.info("Prerequisites failed -> User is not logged into the OCP console")
                 missing_tools.append("connection")
-
-        # # kubectl check
-        # if "kubectl" in prereqs:
-        #     logger.info(f"Checking if the 'kubectl' command is available")
-        #     kubectl = command_available("kubectl")
-        #     if not kubectl:
-        #         logger.info("Prerequisites failed -> kubectl not installed")
-        #         missing_tools.append("Kubectl CLI")
-        #     else:
-        #         logger.info("Kubectl CLI available")
-        #         prereq_summary["kubectl"] = True
-        #         kubectl_version = get_kubectl_version(logger)
-        #         prereq_summary["kubectl_version"] = kubectl_version
 
         if "skopeo" in prereqs:
             logger.info("Checking if skopeo is available")

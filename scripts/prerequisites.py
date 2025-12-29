@@ -56,7 +56,7 @@ from helper_scripts.utilities.prerequisites_utilites import zip_folder, \
 from helper_scripts.utilities.utilities import read_version_toml, prereq_checks
 from helper_scripts.validate import validate as v
 
-__version__ = "1.1.3"
+__version__ = "2.0.0"
 
 
 
@@ -101,6 +101,8 @@ def main(ctx: typer.Context,
 
     # Read Version File
     version_path = os.path.join(os.path.dirname(os.getcwd()), "version.toml")
+    if not os.path.exists(version_path):
+        version_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), "version.toml")
 
     if os.path.exists(version_path):
         state["version_data"] = read_version_toml(version_path, state["logger"])

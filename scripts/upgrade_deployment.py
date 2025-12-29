@@ -32,7 +32,7 @@ from helper_scripts.utilities.interface import clear, display_issues, display_pr
 from helper_scripts.utilities.utilities import prereq_checks, read_version_toml, create_deployment_info, \
     create_version_info, create_current_operator_info
 
-__version__ = "1.1.3"
+__version__ = "2.0.0"
 
 app = typer.Typer()
 
@@ -45,7 +45,8 @@ state = {
     "version_details": {},
     "deployment_details": {},
     "dev": False,
-    "dryrun": False
+    "dryrun": False,
+    "tls_verify": True
 }
 
 console = Console(record=True)
@@ -102,7 +103,13 @@ def display_mode_version(mode: str, description: str):
     if state["silent"]:
         msg += "\nSilent Mode Enabled"
 
-    print(Panel.fit(msg, title="IBM Content Assistant Upgrade CLI", border_style="green"))
+    if state["verbose"]:
+        msg += "\nVerbose Logging Enabled"
+
+    if not state["tls_verify"]:
+        msg += "\nTLS Verification Disabled for Podman Operations"
+
+    print(Panel.fit(msg, title="IBM Content Assistant Upgrade Upgrade CLI", border_style="green"))
     print()
 
 
@@ -392,6 +399,9 @@ def main(ctx: typer.Context,
          verbose: Annotated[bool, typer.Option(
              help="Enable verbose logging.",
              rich_help_panel="Customization and Utils")] = False,
+         tls_verify: Annotated[bool, typer.Option(
+             help="Enable TLS verification for Podman operations.",
+             rich_help_panel="Customization and Utils")] = True,
          dryrun: Annotated[bool, typer.Option(
              help="Perform a dry run",
              rich_help_panel="Customization and Utils")] = False,
@@ -411,6 +421,9 @@ def main(ctx: typer.Context,
 
     if dev:
         state["dev"] = True
+
+    if not tls_verify:
+        state["tls_verify"] = False
 
     state["logger"] = setup_logger(FILE_LOG_LEVEL)
 
@@ -437,6 +450,7 @@ def main(ctx: typer.Context,
     for file in files:
         required_files.append(os.path.join(descriptor_path, file))
 
+    state["logger"].info(f"Checking pre-requisite tools")
     checks = ["connection","podman"]
     missing_tools, results, files = prereq_checks(logger=state["logger"], prereqs=checks, files=required_files)
 
