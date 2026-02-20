@@ -10,19 +10,19 @@
 ###############################################################################
 
 # Release Details
-DATE = "2025-12-11"
-RELEASE = "IBM Content Assistant 1.0.1"
+DATE = "2026-02-20"
+RELEASE = "IBM Content Assistant 1.0.2"
 
 # Repository Details
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 APP_VERSION = "1.0.0"
 
 # OLM Version Details
 CHANNEL = "v1.0"
-CSV = "v1.0.1"
+CSV = "v1.0.2"
 
 # Airgap Details
-CASE_VERSION = "1.0.1"
+CASE_VERSION = "1.0.2"
 CASE_NAME = "ibm-content-assistant"
 
 

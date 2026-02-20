@@ -38,9 +38,8 @@ from rich.text import Text
 
 from ..utilities import kubernetes_utilites as k
 from ..utilities.interface import idp_token_claim_results
-from ..utilities.prerequisites_utilites import create_ssl_context, decode_if_base64
-from ..utilities.prerequisites_utilites import kubectl_log_in_check, \
-    collect_visible_files, \
+from ..utilities.prerequisites_utilites import create_ssl_context
+from ..utilities.prerequisites_utilites import collect_visible_files, \
     connect_to_server, clean_and_combine_pem_files
 
 requests.packages.urllib3.disable_warnings()
@@ -81,8 +80,6 @@ class Validate:
                  content_assistant_prop=None,
                  pvc_size='10Mi',
                  namespace=''):
-
-        self._kube = k.KubernetesUtilities(logger)
 
         self._namespace = namespace
 
@@ -189,18 +186,6 @@ class Validate:
     @user_group_prop.setter
     def user_group_prop(self, user_group_prop):
         self._user_group_prop = user_group_prop
-
-    def check_env_util(self) -> list:
-        missing_tools = []
-
-        self._kubectl_logged_in = kubectl_log_in_check(self._logger)
-        if not self._kubectl_logged_in:
-            missing_tools.append("connection")
-        return missing_tools
-
-    def __check_kubectl(self):
-        if not self._kubectl_present:
-            raise typer.Exit(code=1)
 
     def cleanup_tmp(self):
         if os.path.exists(self._TMP_DIR):
@@ -485,7 +470,7 @@ class Validate:
 
             if cert_path:
                 progress.log()
-                progress.log("Retrieving access token over SSL...")
+                progress.log("Retrieving access and id_token token over SSL...")
 
                 context = create_ssl_context(client_cert_file=cert_path)
                 client_session = Session()
@@ -493,20 +478,22 @@ class Validate:
 
                 response = client_session.post(url, headers=headers, data=payload, timeout=5)
 
-                # Check if "access_token" is in the response
-                if response.status_code == 200 and "access_token" in response.json():
-                    return response.json(), True
+                # Check if "access_token" or 'id_token' is in the response
+                if response.status_code == 200:
+                    if 'access_token' in response.json() or 'id_token' in response.json():
+                        return response.json(), True
 
-                return response.json(), False
+                return response, False
 
 
             progress.log()
-            progress.log("Retrieving access token...")
+            progress.log("Retrieving access and id_token token...")
             response = requests.post(url, headers=headers, data=payload, verify=False, timeout=5)
 
             # Check if "access_token" is in the response
-            if response.status_code == 200 and "access_token" in response.json():
-                return response.json(), True
+            if response.status_code == 200:
+                if "access_token" in response.json() or 'id_token' in response.json():
+                    return response.json(), True
 
             return response.json(), False
 
@@ -520,8 +507,9 @@ class Validate:
                               style="bold yellow"))
             response = requests.post(url, headers=headers, data=payload, verify=False, timeout=5)
 
-            if response.status_code == 200 and "access_token" in response.json():
-                return response.json(), True
+            if response.status_code == 200:
+                if "access_token" in response.json() or 'id_token' in response.json():
+                    return response.json(), True
 
             return response.json(), False
         except requests.exceptions.RequestException as e:
@@ -715,7 +703,7 @@ class Validate:
 
                 self._logger.info(f"Using certificate path: {cert_path}")
 
-                verify_cert = True
+                verify_cert = cert_path
             else:
                 verify_cert = False
 
@@ -833,7 +821,7 @@ class Validate:
             self._logger.info(f"\"{client_type}\" authentication method is supported!")
 
             # Retrieving token
-            self._logger.info(f"Retrieving token from IDP using {client_type}")
+            self._logger.info(f"Retrieving id_token from IDP using {client_type}")
             progress.log()
             progress.log("Using \"client_credentials\" grant to retrieve access token from IDP")
 
@@ -841,7 +829,7 @@ class Validate:
             # Will check the Issuer Endpoint to determine if it's Azure Entra
             issuer = idp_config.get("ISSUER", "")
             if 'microsoftonline' in issuer:
-                scope = f"api://{client_id}/.default"
+                scope = f"{client_id}/.default"
             else:
                 scope = "openid profile email"
 
@@ -1296,7 +1284,7 @@ class Validate:
         progress.log()
         progress.log(message)
 
-        message = Text(f"SSL cipher used: \"{cipher}\", is accepted!", style="bold green")
+        message = Text(f"SSL cipher used: \"{cipher[0]}\", is accepted!", style="bold green")
         progress.log()
         progress.log(message)
 
@@ -1328,7 +1316,6 @@ class Validate:
 
     # Use JAR to test DB connection
     def __check_connection_with_jar(self, jar_cmd, progress):
-        self.__check_java()
         try:
             if platform.system() == 'Windows':
                 output = subprocess.check_output(["powershell.exe", jar_cmd], shell=True, stderr=subprocess.PIPE,
@@ -1352,7 +1339,7 @@ class Validate:
             if "PKIX path building failed" in error.stderr or "Connection failure with : TLSv1.3" in error.stderr:
                 progress.log()
                 progress.log(Text(
-                    "SSL Certificate could not be validated, please check the supplied certificate in propertyFile/ssl-certs.",
+                    f"SSL Certificate could not be validated, please check the supplied certificate in propertyFile/{self._namespace}/ssl-certs.",
                     style="bold red"))
 
             return False
@@ -1374,17 +1361,11 @@ class Validate:
         TIMEOUT_ATTEMPTS = 30
         SLEEP_TIMER = 10
 
-        if platform.system() == 'Windows':
-            kubectl_cmd = f"kubectl get pvc | findstr {sample_pvc_name} | findstr \"Bound\""
-        else:
-            kubectl_cmd = f"kubectl get pvc | grep {sample_pvc_name}| grep -q -m 1 \"Bound\""
-
         for i in range(TIMEOUT_ATTEMPTS):
             progress.log(f"\nChecking for {sample_pvc_name} liveness - Attempt {i + 1}/{TIMEOUT_ATTEMPTS}\n")
             validated = True
             try:
                 validated = self._kube.check_pvc_bound(namespace=self._namespace, pvc_name=sample_pvc_name)
-                # subprocess.check_output(kubectl_cmd, shell=True, stderr=subprocess.PIPE, universal_newlines=True)
                 if not validated:
                     progress.log(Text(f"\n\"{sample_pvc_name}\" not yet found, waiting {SLEEP_TIMER} seconds to retry",
                                       style="bold yellow"))
@@ -1418,6 +1399,12 @@ class Validate:
         # check if storage class is present
         validated = True
         try:
+            if self._kube.in_cluster:
+                self._logger.info("Running inside cluster, skipping storage class validation")
+                progress.log()
+                progress.log(Panel.fit(Text(f"Skipping storage class: \"{sc_name}\" validation, running inside cluster", style="bold yellow")))
+                self.is_validated[sc_name] = True
+
             storage_classes = self._kube.list_storage_classes()
 
             if sc_name in storage_classes:
@@ -1482,33 +1469,6 @@ class Validate:
 
         return rendered_pvc
 
-    # def kubectl_apply(self, yaml_path):
-    #     self.__check_kubectl()
-    #     kubectl_cmd = "kubectl apply -f \"" + yaml_path + "\""
-    #     response = None
-    #     try:
-    #         response = subprocess.check_output(kubectl_cmd, shell=True, stderr=subprocess.PIPE, universal_newlines=True)
-    #     except subprocess.CalledProcessError as error:
-    #         if "metadata.resourceVersion" in str(error.stderr):
-    #             kubectl_cmd = "kubectl replace -f \"" + yaml_path + "\""
-    #             response = subprocess.check_output(kubectl_cmd, shell=True, stderr=subprocess.PIPE,
-    #                                                universal_newlines=True)
-    #         else:
-    #             self._logger.exception(
-    #                 f"Exception applying '{yaml_path}' -  {str(error.stderr)}")
-    #     return response
-    #
-    # def kubectl_delete(self, yaml_path):
-    #     self.__check_kubectl()
-    #     kubectl_cmd = "kubectl delete -f \"" + yaml_path + "\""
-    #     response = None
-    #     try:
-    #         response = subprocess.check_output(kubectl_cmd, shell=True, stderr=subprocess.PIPE, universal_newlines=True)
-    #     except subprocess.CalledProcessError as error:
-    #         self._logger.exception(
-    #             f"Exception deleting '{yaml_path}' -  {str(error.stderr)}")
-    #     return response
-
     # Looks for yaml files in the folder path and applies it with kubectl, will not look int subfolders.
     def auto_apply_all_secrets_in_folder(self, folder_path):
         yaml_ext = [".yaml", ".yml"]
@@ -1552,8 +1512,8 @@ class Validate:
     def validate_vector_database_over_basic_auth(self,url, username, password, progress, ssl_enabled=False, cert_path=None):
 
         try:
-            plain_text_username = decode_if_base64(username)
-            plain_text_password = decode_if_base64(password)
+            plain_text_username= username
+            plain_text_password = password
             if ssl_enabled:
                 context = create_ssl_context(client_cert_file=cert_path)
                 client_session = Session()

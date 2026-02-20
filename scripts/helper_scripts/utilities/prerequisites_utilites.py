@@ -329,24 +329,6 @@ def collect_visible_files(folder_path: str) -> list:
     return [file for file in os.listdir(folder_path) if not file.startswith('.')]
 
 
-
-# def get_kubectl_version(logger):
-#     try:
-#         # Get the kubectl version
-#         kubectl_version = subprocess.check_output(["kubectl", "version", "--output=json"],
-#                                                   stderr=subprocess.DEVNULL,
-#                                                   timeout=5).decode("utf-8")
-#         kubectl_version = json.loads(kubectl_version)["clientVersion"]["gitVersion"]
-#         logger.info(f"Kubectl Version: {kubectl_version}")
-#         return kubectl_version
-#     except subprocess.TimeoutExpired:
-#         logger.info("Error: Timeout while getting kubectl version")
-#         return ""
-#     except Exception as e:
-#         logger.info(f"Error: {e}")
-#         return ""
-
-
 def get_skopeo_version(logger):
     try:
         # Get the skopeo version
@@ -600,23 +582,6 @@ def is_email(logger, usernames):
             return True
     return False
 
-# Checks whether we are properly logged into a Kubernetes/OCP cluster
-# 'kubectl config current-context' is not sufficient it will show most recent cluster,
-# but we cannot apply yaml which is needed to test storage classes
-# (!!!) DOES NOT WORK WHEN INSIDE OPERATOR POD
-def kubectl_log_in_check(logger):
-    try:
-        # DBACLD-161187: Changed to general 'kubectl version' command to check if kubectl is logged in
-        subprocess.check_output("kubectl version", shell=True, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
-                                universal_newlines=True, timeout=5)
-        return True
-    except subprocess.TimeoutExpired:
-        return False
-    except subprocess.CalledProcessError as error:
-        logger.info("Kubectl is not logged into any cluster and " \
-                    + f"will cause errors when checking storage classes; {error}")
-        return False
-
 
 # method to check to if value in property file is valid
 def valid_check(prop_key, prop_value, valid_values, _error_list, _logger):
@@ -669,9 +634,12 @@ def gather_var(key, _logger, _envfile, _error_list, section_header='', valid_val
     try:
         if section_header == '':
             value = _envfile.get(key)
+            _logger.info(f"Gathered variable {key} with value {value} from root level")
         else:
             value = _envfile[section_header][key]
             section_header = "[" + section_header + "]"
+            _logger.info(f"Gathered variable {key} with value {value} from section {section_header}")
+
         # Check that the user/property file input is valid
         if valid_check(prop_key=section_header + key, prop_value=value, valid_values=valid_values, _logger=_logger,
                        _error_list=_error_list):
@@ -914,20 +882,6 @@ def generate_secure_password(length=24) -> str:
 
     password = ''.join(secrets.choice(alphabet) for _ in range(length))
     return password
-def decode_if_base64(value: str) -> str:
-    """
-    If value is valid Base64, return its decoded string.
-    Otherwise, return the value as-is.
-    """
-    try:
-        decoded_bytes = base64.b64decode(value, validate=True)
-        # Check if re-encoding matches to ensure it's truly base64
-        if base64.b64encode(decoded_bytes).decode('utf-8') == value:
-            return decoded_bytes.decode('utf-8', errors='ignore')
-        else:
-            return value
-    except (binascii.Error, ValueError, UnicodeDecodeError):
-        return value
 
 
 

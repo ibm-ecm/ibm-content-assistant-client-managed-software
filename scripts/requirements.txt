@@ -1,13 +1,13 @@
-typer~=0.20.0
+typer~=0.21.1.0
 rich~=14.2.0
-kubernetes==33.1.0
+kubernetes==35.0.0
 toml~=0.10.2
 requests~=2.32.4
 PyYAML~=6.0.3
-tomlkit~=0.13.3
+tomlkit~=0.14.0
 cryptography~=46.0.3
 urllib3~=2.6.1
 pyOpenSSL~=25.3.0
 Jinja2~=3.1.6
 packaging~=25.0
-ruamel.yaml==0.18.16
+ruamel.yaml==0.19.1

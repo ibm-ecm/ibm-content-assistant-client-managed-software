@@ -17,4 +17,4 @@ spec:
   displayName: ibm-content-assistant-operator
   publisher: IBM
   sourceType: grpc
-  image: icr.io/cpopen/ibm-content-assistant-catalog@sha256:705fadace4f3b7edf02e45630a2eafbaf3fa40ea130b5890ca6844fca8a8f2a6
+  image: icr.io/cpopen/ibm-content-assistant-catalog@sha256:c2149186fcff549fea574c86ab207c60e8f5718a533b2fffbac47347a3a00db8

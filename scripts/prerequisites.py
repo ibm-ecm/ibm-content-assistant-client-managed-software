@@ -24,6 +24,7 @@ import os
 import re
 import shutil
 from datetime import datetime
+from typing_extensions import Annotated
 from typing import Optional
 
 import typer
@@ -56,9 +57,7 @@ from helper_scripts.utilities.prerequisites_utilites import zip_folder, \
 from helper_scripts.utilities.utilities import read_version_toml, prereq_checks
 from helper_scripts.validate import validate as v
 
-__version__ = "2.0.0"
-
-
+__version__ = "2.0.1"
 
 app = typer.Typer()
 state = {
@@ -79,12 +78,16 @@ def version_callback(value: bool):
 
 @app.callback()
 def main(ctx: typer.Context,
-         version: Optional[bool] = typer.Option(None, "--version", help="Show version and exit.",
-                                                callback=version_callback, is_eager=True),
-         silent: bool = typer.Option(False, help="Enable Silent Install (no prompts).",
-                                     rich_help_panel="Customization and Utils"),
-         verbose: bool = typer.Option(False, help="Enable verbose logging.",
-                                      rich_help_panel="Customization and Utils")):
+         version: Annotated[bool, typer.Option(
+    "--version", help="Show version and exit.",
+    callback=version_callback, is_eager=True)] = None,
+         silent: Annotated[bool, typer.Option(
+             help="Enable Silent Install (no prompts).",
+             rich_help_panel="Customization and Utils")] = False,
+         verbose: Annotated[bool, typer.Option(
+             help="Enable verbose logging.",
+             rich_help_panel="Customization and Utils")] = False):
+
     """
     IBM Content Assistant Deployment Prerequisites -- CLI.
     """
@@ -114,20 +117,20 @@ def main(ctx: typer.Context,
         clear(console)
         display_mode_version("Gather",
                              "Gather information required for IBM Content Assistant Deployment")
-        checks = ["connection",]
+        checks = ["connection"]
         files = []
 
 
     elif ctx.invoked_subcommand == "generate":
         display_mode_version("Generate",
                              "Generate all deployment YAMLs and Secrets for IBM Content Assistant Deployment")
-        checks = ["connection",]
+        checks = ["connection"]
         files = []
 
     elif ctx.invoked_subcommand == "validate":
         display_mode_version("Validate",
                              "Validate all prerequisites for IBM Content Assistant Deployment")
-        checks = ["connection",]
+        checks = ["connection"]
         files = []
 
 

@@ -102,9 +102,14 @@ class SilentGatherOptions(GatherOptions):
         self._namespace = super().namespace
 
     def silent_license_model(self, version_data=None):
-        license = gather_var(key="LICENSE_ACCEPT", valid_values=[True], _logger=self._logger, _envfile=self._envfile,
-                   _error_list=self._error_list)
-        self._accept_license = license
+        self._logger.info("Gather license model details")
+        license_accept = gather_var(key="LICENSE_ACCEPT", valid_values=True, _logger=self._logger, _envfile=self._envfile,
+                                    _error_list=self._error_list)
+        if not license_accept:
+            self._error_list.append(
+                f"ERROR with LICENSE_ACCEPT in silent mode configuration {self._envfile_path} file - License must be accepted to proceed with installation")
+            self.error_check()
+        self._accept_license = license_accept
 
     def silent_collect_sensitive_info(self):
         collected_sensitive = gather_var(key="COLLECT_SENSITIVE_DATA", _logger=self._logger, _envfile=self._envfile, _error_list=self._error_list)

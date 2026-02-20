@@ -1,3 +1,9 @@
+## 2.0.1 (2026-02-20)
+
+### Fix
+
+- fix for silent deployment regarding license acceptance
+
 ## 2.0.0 (2025-12-29)
 
 ### Fix
