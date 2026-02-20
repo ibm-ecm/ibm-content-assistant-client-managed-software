@@ -282,7 +282,6 @@ spec:
         # Admin Role name associated with the access token
         access_token_role: ibm-genai-document-manager
         # Secret name that contains the private key and passphrase
-        # TODO: Add doc link
         access_token_key_pem_secret: ibm-content-assistant-admin-key-secret
 
       startup:
