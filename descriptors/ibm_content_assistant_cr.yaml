@@ -16,7 +16,7 @@ metadata:
     app.kubernetes.io/instance: ibm-cas
     app.kubernetes.io/managed-by: ibm-cas
     app.kubernetes.io/name: ibm-cas
-    release: 1.0.0
+    release: 1.0.1
 spec:
   ## The version of the Content Assistant operator that is being used.
   appVersion: 1.0.0

@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/instance: ibm-cas
     app.kubernetes.io/managed-by: ibm-cas
     app.kubernetes.io/name: ibm-cas
-    release: 1.0.0
+    release: 1.0.1
   name: ibm-content-assistant-operator-rb
 roleRef:
   apiGroup: rbac.authorization.k8s.io
