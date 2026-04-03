@@ -623,8 +623,9 @@ class GatherPrereqOptions:
 
             version = version_data.get("VERSION", '1.0.0' )
             self._cas_version = version
+            display = version_data.get("DISPLAY", '1.0.0' )
 
-            print(Panel.fit(Text(f"Detected IBM Content Assistant Version: {version}"), style="bold cyan"))
+            print(Panel.fit(Text(f"Detected IBM Content Assistant Version: {display}"), style="bold cyan"))
             print()
 
             while True:

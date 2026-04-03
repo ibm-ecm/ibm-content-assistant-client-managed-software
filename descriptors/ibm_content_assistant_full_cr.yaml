@@ -2,7 +2,7 @@
 #
 # Licensed Materials - Property of IBM
 #
-# (C) Copyright IBM Corp. 2025 All Rights Reserved.
+# (C) Copyright IBM Corp. 2026 All Rights Reserved.
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
@@ -16,7 +16,7 @@ metadata:
     app.kubernetes.io/instance: ibm-cas
     app.kubernetes.io/managed-by: ibm-cas
     app.kubernetes.io/name: ibm-cas
-    release: 1.0.0
+    release: 1.0.2
 spec:
   ## The version of the Content Assistant operator that is being used.
   appVersion: 1.0.0
@@ -118,6 +118,10 @@ spec:
     ## By default, the sc_is_multiple_az parameter is set to false. When the value is set to true, the pods of the Content Assistant deployment are spread across your user-defined topology domains.
     ## The pod API includes a spec.topologySpreadConstraints field, which is used by the Content Assistant operator to configure it.
     sc_is_multiple_az: false
+
+    ## The optional parameter to enable/disable the creation of PodDisruptionBudgets for Content Assistant components.  If the parameter is not defined, then the default value is "false".
+    ## Set this flag to "true" if you plan to have PodDisruptionBudgets in Content Assistant namespaces so that the operators can create PodDisruptionBudgets for Content Assistant components.
+    sc_enable_pdb: false
 
     ## The optional parameter to enable/disable the creation of sample network policy templates for Content Assistant components.  If the parameter is not defined, then the default value is "false".
     ## Set this flag to "true" if you plan to have restricted network policies in Content Assistant namespaces so that the operators can create sample network policy templates for Content Assistant components.
@@ -227,7 +231,7 @@ spec:
     image:
       ## The default repository is the IBM Entitled Registry.
       repository: cp.icr.io/cp/cas/genaiconnector
-      tag: "1.0.2"
+      tag: "1.0.2-IF001"
 
       ## This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent
@@ -292,12 +296,13 @@ spec:
 
       ## Set the logging level for the IBM Content Assistant
       ## Available values in the order of verbosity are 
-      ## debug;info;warning;error;critical
+      ## debug;info;warning;error;critical;trace
       ## debug: Provides detailed information, primarily useful for diagnosing problems.
       ## info: Confirms that things are working as expected
       ## warning: Indicates that something unexpected happened or that a potential problem might arise in the near future, but the software is still functioning.
       ## error: Signifies a more serious problem that has prevented the software from performing a specific function
       ## critical: A serious error, indicating that the program itself may be unable to continue running.
+      ## trace: Used for tracing the execution of the program, typically for debugging purposes.
       ## Default: info
       log_level: info
 

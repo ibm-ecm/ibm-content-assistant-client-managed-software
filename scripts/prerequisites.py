@@ -109,7 +109,6 @@ def main(ctx: typer.Context,
 
     if os.path.exists(version_path):
         state["version_data"] = read_version_toml(version_path, state["logger"])
-        state["version_data"]["VERSION"] = state["version_data"]["VERSION"].split('-')[0]
     else:
         state["version_data"] = {}
 

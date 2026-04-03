@@ -11,4 +11,3 @@ pyOpenSSL~=26.0.0
 Jinja2~=3.1.6
 packaging~=26.0
 ruamel.yaml==0.19.1
-typing-extensions==4.15.0

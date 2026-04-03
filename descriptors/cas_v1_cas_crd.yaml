@@ -2,7 +2,7 @@
 #
 # Licensed Materials - Property of IBM
 #
-# (C) Copyright IBM Corp. 2025 All Rights Reserved.
+# (C) Copyright IBM Corp. 2026 All Rights Reserved.
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
@@ -12,7 +12,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.1
+    controller-gen.kubebuilder.io/version: v0.16.4
   name: casclusters.cas.ibm.com
 spec:
   group: cas.ibm.com
@@ -116,6 +116,7 @@ spec:
                         - warning
                         - critical
                         - error
+                        - trace
                         type: string
                       startup:
                         properties:
@@ -402,6 +403,10 @@ spec:
                       sc_restricted_internet_access:
                         type: boolean
                     type: object
+                  sc_enable_pdb:
+                    description: Enable Pod Disruption Budget to ensure high availability
+                      during voluntary disruptions
+                    type: boolean
                   sc_fs_group:
                     format: int64
                     type: integer

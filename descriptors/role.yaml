@@ -2,7 +2,7 @@
 #
 # Licensed Materials - Property of IBM
 #
-# (C) Copyright IBM Corp. 2025 All Rights Reserved.
+# (C) Copyright IBM Corp. 2026 All Rights Reserved.
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/instance: ibm-cas
     app.kubernetes.io/managed-by: ibm-cas
     app.kubernetes.io/name: ibm-cas
-    release: 1.0.0
+    release: 1.0.2
   name: ibm-content-assistant-operator-role
 rules:
   - verbs:
@@ -216,3 +216,16 @@ rules:
     resources:
       - casclusters/status
       - cascluster/status
+  - verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    apiGroups:
+      - policy
+    resources:
+      - poddisruptionbudgets
