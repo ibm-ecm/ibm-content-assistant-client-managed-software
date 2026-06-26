@@ -4,5 +4,11 @@
     "comment": [
       "Storage class name for slow file storage."
     ]
+  },
+  "BLOCK_STORAGE_CLASS": {
+    "value": "",
+    "comment": [
+      "Block storage class for OpenSearch (only used when OpenSearch is selected as vector database)"
+    ]
   }
 }

@@ -115,11 +115,42 @@ class SilentGatherPrereqOptions(GatherPrereqOptions):
         self._ai_provider_number = gather_var(key="AI_PROVIDER_COUNT",valid_values=(1, float('inf')), _logger=self._logger,
                                _envfile=self._envfile, _error_list=self._error_list)
 
+    def silent_ai_provider_type(self):
+        """
+        Read AI Provider type from silent config file
+        """
+        provider_type = gather_var(key="AI_PROVIDER_TYPE", valid_values=[1, 2], _logger=self._logger,
+                                _envfile=self._envfile, _error_list=self._error_list)
+        if provider_type is not None:
+            self._ai_provider_type = self.AIProviderType(provider_type).name
+        else:
+            # Default to WATSONX_SAAS if not specified
+            self._ai_provider_type = "WATSONX_SAAS"
+
     def silent_license_model(self):
         license_model = gather_var(key="LICENSE", valid_values=["FNCM", "CP4BA"], _logger=self._logger,
                                    _envfile=self._envfile, _error_list=self._error_list)
         if license_model is not None:
             self._license_model = license_model
+            
+            # If CP4BA license, check for OpenSearch cluster configuration
+            if license_model.upper() == "CP4BA":
+                self.silent_opensearch_cluster()
+
+    def silent_opensearch_cluster(self):
+        """
+        Read OpenSearch cluster configuration flag from silent config file for CP4BA license.
+        Detailed OpenSearch configuration (storage classes, hostname, passwords) will be
+        collected in the property files after gather mode completes.
+        """
+        create_opensearch = gather_var(key="CREATE_OPENSEARCH_CLUSTER", _logger=self._logger,
+                                      _envfile=self._envfile, _error_list=self._error_list)
+        
+        if create_opensearch:
+            self._create_opensearch_cluster = True
+            self._logger.info("OpenSearch cluster creation enabled - configuration details will be set in property files")
+        else:
+            self._create_opensearch_cluster = False
 
     # Function to read namespace information from toml file
     def silent_namespace(self):

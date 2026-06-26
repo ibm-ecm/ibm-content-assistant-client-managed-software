@@ -237,7 +237,14 @@ class GenerateSecrets:
         for ai_provider in self._content_assistant_properties["_ai_providers_ids"]:
             ai_provider_label = self._content_assistant_properties[ai_provider]["AI_PROVIDER_LABEL"]
             data[f"AI_PROVIDER_API_KEY_{ai_provider_label.upper()}"] = self._content_assistant_properties[ai_provider]["API_KEY"]
-            data[f"AI_PROVIDER_SPACE_ID_{ai_provider_label.upper()}"] = self._content_assistant_properties[ai_provider]["SPACE_ID"]
+            
+            # Check if SPACE_ID exists (WatsonX SaaS) or USERNAME exists (WatsonX Lightweight)
+            if "SPACE_ID" in self._content_assistant_properties[ai_provider]:
+                # WatsonX SaaS provider type
+                data[f"AI_PROVIDER_SPACE_ID_{ai_provider_label.upper()}"] = self._content_assistant_properties[ai_provider]["SPACE_ID"]
+            elif "USERNAME" in self._content_assistant_properties[ai_provider]:
+                # WatsonX Lightweight provider type
+                data[f"AI_PROVIDER_USERNAME_{ai_provider_label.upper()}"] = self._content_assistant_properties[ai_provider]["USERNAME"]
 
         self.create_component_secret(data, secret_name,self._generate_secrets_folder)
 
@@ -291,6 +298,28 @@ class GenerateSecrets:
             else:
                 secret_name = "vector_database-2-oidc-certificate-secret"
             self.create_ssl_secret(folderpath=vector_database_oidc_folder, ssl_certs=ssl_certs, item=secret_name, prefix=f"{str(id).lower()}-oidc-")
+
+    # Function to create AI provider SSL secret for lightweight providers
+    def create_ai_provider_ssl_secret(self, ai_provider_id="AI_PROVIDER", provider_number=1):
+        """
+        Create SSL secret for AI Provider (WatsonX Lightweight)
+        
+        Args:
+            ai_provider_id: The AI provider ID (e.g., "AI_PROVIDER", "AI_PROVIDER2")
+            provider_number: The provider number for naming (1, 2, 3, etc.)
+        """
+        if provider_number == 1:
+            ai_provider_folder = os.path.join(self._ssl_cert_folder, "ai-provider")
+            secret_name = "ai-provider-certificate-secret"
+        else:
+            ai_provider_folder = os.path.join(self._ssl_cert_folder, f"ai-provider{provider_number}")
+            secret_name = f"ai-provider-{provider_number}-certificate-secret"
+            
+        if os.path.exists(ai_provider_folder):
+            self._logger.info(f"Creating AI provider SSL secret for Provider ID: {ai_provider_id}")
+            
+            ssl_certs = collect_visible_files(ai_provider_folder)
+            self.create_ssl_secret(folderpath=ai_provider_folder, ssl_certs=ssl_certs, item=secret_name, prefix=f"ai-provider-{provider_number}-")
 
     # Function to create the admin access secret that generates an encrypted private key first
     def create_content_admin_access_secret(self):

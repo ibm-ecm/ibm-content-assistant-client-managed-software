@@ -228,6 +228,13 @@ class GatherPrereqOptions:
         fncm = 1
         cp4ba = 2
 
+    class AIProviderType(Enum):
+        '''
+        Enum to represent the AI Provider type
+        '''
+        WATSONX_SAAS = 1
+        WATSONX_LIGHTWEIGHT = 2
+
 
     def __init__(self, logger, console):
 
@@ -250,6 +257,13 @@ class GatherPrereqOptions:
         self._current_namespace = None
         self._script_type = "gather"
         self._k = KubernetesUtilities(self._logger)
+        self._ai_provider_type = "WATSONX_SAAS"
+        self._create_opensearch_cluster = False
+        self._opensearch_storage_class = "<Required>"
+        self._opensearch_block_storage_class = "<Required>"
+        self._opensearch_cluster_hostname = "<Required>"
+        self._opensearch_admin_password = "<Required>"
+        self._opensearch_genai_password = "<Required>"
 
     # Create a function to gather all deployment options from the user
     @property
@@ -337,6 +351,65 @@ class GatherPrereqOptions:
     @property
     def enable_admin_access(self):
         return self._enable_admin_access
+
+    @property
+    def ai_provider_type(self):
+        return self._ai_provider_type
+
+    @ai_provider_type.setter
+    def ai_provider_type(self, value):
+        self._ai_provider_type = value
+
+    @property
+    def create_opensearch_cluster(self):
+        return self._create_opensearch_cluster
+
+    @property
+    def opensearch_storage_class(self):
+        return self._opensearch_storage_class
+
+    @property
+    def opensearch_block_storage_class(self):
+        return self._opensearch_block_storage_class
+
+    @property
+    def opensearch_cluster_hostname(self):
+        return self._opensearch_cluster_hostname
+
+    @property
+    def opensearch_admin_password(self):
+        return self._opensearch_admin_password
+
+    @property
+    def opensearch_genai_password(self):
+        return self._opensearch_genai_password
+
+    def collect_ai_provider_type(self):
+        """
+        Collect AI Provider type from the user
+        """
+        try:
+            print(Panel.fit("AI Provider Type"))
+            print()
+            print("Select the AI Provider type you want to use:")
+            print()
+            while True:
+                print("1. WatsonX SaaS (requires API Key, Space ID, and URL)")
+                print("2. WatsonX Lightweight (requires API Key, Username, and URL)")
+                print()
+                result = IntPrompt.ask('Enter a valid option [[b]1[/b] or [b]2[/b]]')
+
+                if 1 <= result <= 2:
+                    self._ai_provider_type = self.AIProviderType(result).name
+                    break
+
+                print("\n[prompt.invalid]Number must be between [[b]1[/b] and [b]2[/b]]")
+
+            self._logger.info(f"AI Provider type selected: {self._ai_provider_type}")
+
+        except Exception as e:
+            self._logger.exception(
+                f"Exception from gather script in collect_ai_provider_type function - {str(e)}")
 
     def collect_namespace(self, namespace=None):
         # namespace parameter is none when silent mode is NOT selected, hence the conditions to skip conditions if silent mode is selected
@@ -645,10 +718,10 @@ class GatherPrereqOptions:
                                     style="link hhttps://ibm.biz/CAS_License_1_0_0")
             cas_notices_url = Text("https://ibm.biz/CAS_Notices_1_0_0",
                                    style="link https://ibm.biz/CAS_Notices_1_0_0")
-            cp4ba_license_url = Text("https://ibm.biz/cp4ba_license_2501",
-                                     style="link https://ibm.biz/cp4ba_license_2501")
-            cp4ba_reserved_license_url = Text("https://ibm.biz/cp4ba-reserved-license-2501",
-                                                style="link https://ibm.biz/cp4ba-reserved-license-2501")
+            cp4ba_license_url = Text("https://ibm.biz/cp4ba_license_2600",
+                                     style="link https://ibm.biz/cp4ba_license_2600")
+            cp4ba_reserved_license_url = Text("https://ibm.biz/cp4ba-reserved-license-2600",
+                                                style="link https://ibm.biz/cp4ba-reserved-license-2600")
 
             license_message = (f"IMPORTANT: Review the license information for the product bundle you are deploying.\n\n" 
                               f"IBM Content Assistant Client Managed Software license information here: {cas_license_url}\n" 
@@ -669,10 +742,59 @@ class GatherPrereqOptions:
                 print("\n[prompt.invalid]You must accept the International Program License to continue.")
                 exit(1)
 
+            # If CP4BA license is selected, ask about OpenSearch cluster creation
+            if self._license_model.lower() == "cp4ba":
+                self.collect_opensearch_cluster_option()
+
         except Exception as e:
             self._logger.exception(
                 f"Exception from gather script in license model function -  {str(e)}")
 
+
+    # Create a function to gather OpenSearch cluster configuration from user
+    def collect_opensearch_cluster_option(self):
+        """
+        Prompts the user if they want to use OpenSearch cluster when CP4BA license is selected.
+        Cluster details will be configured in the property file.
+        """
+        try:
+            print()
+            print(Panel.fit("OpenSearch Cluster Configuration"))
+            print()
+            print("IBM Content Assistant can use an OpenSearch cluster as a vector database.")
+            print("The OpenSearch Operator is already installed with your CP4BA deployment.")
+            print("You can create and configure an OpenSearch cluster for use with Content Assistant.")
+            print()
+            
+            self._create_opensearch_cluster = Confirm.ask(
+                "Do you want to use OpenSearch as your vector database?"
+            )
+            
+            if self._create_opensearch_cluster:
+                print()
+                print(Panel.fit(
+                    Text("OpenSearch will be configured as your vector database.\n"
+                         "Cluster details will be available in the property file for customization."),
+                    style="bold green"
+                ))
+                # Set None values - these will be populated with defaults in property file
+                self._opensearch_storage_class = None
+                self._opensearch_block_storage_class = None
+                self._opensearch_cluster_hostname = None
+                self._opensearch_admin_password = None
+                self._opensearch_genai_password = None
+            else:
+                # Set defaults when not creating OpenSearch cluster
+                self._opensearch_storage_class = None
+                self._opensearch_block_storage_class = None
+                self._opensearch_cluster_hostname = None
+                self._opensearch_admin_password = None
+                self._opensearch_genai_password = None
+                
+        except Exception as e:
+            self._logger.exception(
+                f"Exception from gather script in collect_opensearch_cluster_option function - {str(e)}"
+            )
 
 
     # Create a function to gather platform and ingress enabled from user
@@ -779,7 +901,14 @@ class GatherPrereqOptions:
             "license_model": self.license_model,
             "ingress": self.ingress,
             "enable_admin_access": self.enable_admin_access,
-            "namespace": self.namespace
+            "namespace": self.namespace,
+            "ai_provider_type": self.ai_provider_type,
+            "create_opensearch_cluster": self.create_opensearch_cluster,
+            "opensearch_storage_class": self.opensearch_storage_class,
+            "opensearch_block_storage_class": self.opensearch_block_storage_class,
+            "opensearch_cluster_hostname": self.opensearch_cluster_hostname,
+            "opensearch_admin_password": self.opensearch_admin_password,
+            "opensearch_genai_password": self.opensearch_genai_password
         }
 
 

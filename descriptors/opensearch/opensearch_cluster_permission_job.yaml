@@ -1,0 +1,117 @@
+################################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ica-opensearch-security-bootstrap
+  namespace: REPLACE_NAMESPACE # Replace with your CP4BA namespace
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: opensearch-bootstrap
+          image: registry.access.redhat.com/ubi8/ubi-minimal:latest
+          env:
+            - name: OS_USER
+              value: opensearch-admin
+            - name: OS_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: ica-opensearch-admin-user-secret
+                  key: opensearch-admin
+            - name: GENAI_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: ica-opensearch-genai-secret
+                  key: genai-service-user
+
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              
+              # Install curl
+              microdnf install -y curl && microdnf clean all
+
+              OS_URL="https://ica-opensearch.REPLACE_NAMESPACE.svc.cluster.local:9200" 
+
+              echo "Waiting for OpenSearch..."
+              until curl -k -u "$OS_USER:$OS_PASS" "$OS_URL" >/dev/null 2>&1; do
+                sleep 5
+              done
+
+              echo "Checking if user exists..."
+
+              USER_EXISTS=$(curl -k -u "$OS_USER:$OS_PASS" \
+                -s -o /dev/null -w "%{http_code}" \
+                "$OS_URL/_plugins/_security/api/internalusers/genai-service-user")
+
+              if [ "$USER_EXISTS" = "200" ]; then
+                echo "User already exists. Skipping creation of user, roles, and mappings."
+              else
+                echo "User missing — creating user, roles, and mappings..."
+
+                echo "Creating service user..."
+                curl -k -u "$OS_USER:$OS_PASS" \
+                  -X PUT "$OS_URL/_plugins/_security/api/internalusers/genai-service-user" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"password\":\"$GENAI_PASS\",\"attributes\":{\"description\":\"GenAI Content Assistant service user\"}}"
+
+                echo "Creating role: ibm-genai-index-manager..."
+                curl -k -u "$OS_USER:$OS_PASS" \
+                  -X PUT "$OS_URL/_plugins/_security/api/roles/ibm-genai-index-manager" \
+                  -H "Content-Type: application/json" \
+                  -d '{
+                    "cluster_permissions": ["cluster:monitor/main"],
+                    "index_permissions": [
+                      {
+                        "index_patterns": ["ibm-genai-*"],
+                        "allowed_actions": ["create_index","manage"]
+                      }
+                    ]
+                  }'
+
+                echo "Creating role: ibm-genai-document-manager..."
+                curl -k -u "$OS_USER:$OS_PASS" \
+                  -X PUT "$OS_URL/_plugins/_security/api/roles/ibm-genai-document-manager" \
+                  -H "Content-Type: application/json" \
+                  -d '{
+                    "index_permissions": [
+                      {
+                        "index_patterns": ["ibm-genai-*"],
+                        "allowed_actions": [
+                          "index","delete","read","write",
+                          "indices:admin/get","indices:admin/refresh"
+                        ]
+                      }
+                    ]
+                  }'
+
+                echo "Mapping role: ibm-genai-index-manager..."
+                curl -k -u "$OS_USER:$OS_PASS" \
+                  -X PUT "$OS_URL/_plugins/_security/api/rolesmapping/ibm-genai-index-manager" \
+                  -H "Content-Type: application/json" \
+                  -d '{"users":["genai-service-user"]}'
+
+                echo "Mapping role: ibm-genai-document-manager..."
+                curl -k -u "$OS_USER:$OS_PASS" \
+                  -X PUT "$OS_URL/_plugins/_security/api/rolesmapping/ibm-genai-document-manager" \
+                  -H "Content-Type: application/json" \
+                  -d '{"users":["genai-service-user"]}'
+
+                echo "Setup completed!"
+              fi
+
+              echo "Final verification..."
+              curl -k -u "$OS_USER:$OS_PASS" \
+                "$OS_URL/_plugins/_security/api/internalusers/genai-service-user?pretty"

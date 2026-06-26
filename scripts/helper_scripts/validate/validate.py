@@ -111,6 +111,9 @@ class Validate:
 
         # Collect Provider API Count
         self._provider_api_count = self._content_assistant_prop.get("_ai_providers_ids", 0)
+        
+        # SSL certificate folder path
+        self._ssl_cert_folder = os.path.join(os.getcwd(), "propertyFile", namespace, "ssl-certs")
 
         # Setting for Truststore
         self.__create_tmp_folder()
@@ -262,133 +265,261 @@ class Validate:
 
         return output_path
 
-    # Function to query IBM Cloud IAM API, returns bearer token
-    def query_iam_api(self, api_key, progress):
-        """ Query IBM Cloud IAM  API to verify connectivity """
+    # Function to validate WatsonX SaaS credentials using ibm-watsonx-ai SDK
+    def validate_watsonx_saas(self, api_key, space_id, url, progress):
+        """ Validate WatsonX SaaS credentials using ibm-watsonx-ai SDK """
         try:
-
-            url = "https://iam.cloud.ibm.com/identity/token"
+            from ibm_watsonx_ai import Credentials, APIClient
+            import warnings
+            import logging as py_logging
 
             progress.log()
-            progress.log(f"Querying IBM Cloud IM API")
+            progress.log(f"Validating WatsonX SaaS credentials")
 
-            headers = {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
+            # Suppress warnings and logging from ibm-watsonx-ai library during validation
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                # Temporarily suppress ibm-watsonx-ai logging
+                ibm_logger = py_logging.getLogger('ibm_watsonx_ai')
+                original_level = ibm_logger.level
+                ibm_logger.setLevel(py_logging.CRITICAL)
+                
+                try:
+                    # Create credentials object for SaaS
+                    credentials = Credentials(
+                        url=url,
+                        api_key=api_key
+                    )
 
-            # Encode the payload
-            payload = f'grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey={api_key}'
+                    # Try to create an API client with the credentials and space_id
+                    # This will validate both the credentials and space_id access
+                    try:
+                        client = APIClient(credentials, space_id=space_id)
+                        
+                        progress.log()
+                        progress.log(f"WatsonX SaaS credentials validated successfully")
+                        return True
 
+                    except Exception as client_error:
+                        progress.log()
+                        progress.log(f"Failed to validate WatsonX SaaS credentials: {str(client_error)}")
+                        return False
+                finally:
+                    # Restore original logging level
+                    ibm_logger.setLevel(original_level)
 
-            response = requests.request("POST", url, headers=headers, data=payload, timeout=5)
-
-            if response.status_code == 200 and "access_token" in response.json():
-                progress.log()
-                progress.log(f"Successfully retrieved bearer token from IBM Cloud IAM API")
-                return response.json()["access_token"], True
-            else:
-                progress.log()
-                progress.log(f"Failed to retrieve bearer token from IBM Cloud IAM API")
-                return response.json(), False
-
+        except ImportError:
+            progress.log()
+            progress.log(f"ibm-watsonx-ai package not installed. Please install it using: pip install ibm-watsonx-ai")
+            self._logger.error("ibm-watsonx-ai package not installed")
+            return False
         except Exception as e:
             progress.log()
-            progress.log(f"Exception occurred while querying IBM Cloud IAM API: {str(e)}")
-            self._logger.exception(
-                f"Exception from validate.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
-            return None, False
-
-
-    # Function to test spaceID with bearer token
-    def test_space_id(self, bearer_token, space_id, progress):
-        """ Test Space ID with bearer token """
-        try:
-
-            url = f"https://api.dataplatform.cloud.ibm.com/v2/spaces/{space_id}"
-
-            progress.log()
-            progress.log(f"Validating Space ID: {space_id}")
-
-            headers = {
-                'Authorization': f'Bearer {bearer_token}',
-                'Content-Type': 'application/json',
-            }
-
-            response = requests.request("GET", url, headers=headers, timeout=5)
-
-
-            if response.status_code == 200:
-                progress.log()
-                progress.log(f"Space ID: {space_id} is valid.")
-                return True
-            else:
-                progress.log()
-                progress.log(f"Space ID: {space_id} is invalid. Response Code: {response.status_code}")
-                return False
-
-        except Exception as e:
-            progress.log()
-            progress.log(f"Exception occurred while testing Space ID: {str(e)}")
+            progress.log(f"Exception occurred while validating WatsonX SaaS: {str(e)}")
             self._logger.exception(
                 f"Exception from validate.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
             return False
 
-    # Function to verify all defined provider API and space ID
+    # Function to validate WatsonX Lightweight credentials using ibm-watsonx-ai SDK
+    def validate_watsonx_lightweight(self, api_key, username, url, progress, cert_path=None):
+        """ Validate WatsonX Lightweight (CPD) credentials using ibm-watsonx-ai SDK """
+        try:
+            from ibm_watsonx_ai import Credentials, APIClient
+            import warnings
+            import logging as py_logging
+
+            progress.log()
+            progress.log(f"Validating WatsonX Lightweight credentials")
+
+            # Suppress warnings and logging from ibm-watsonx-ai library during validation
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                # Temporarily suppress ibm-watsonx-ai logging
+                ibm_logger = py_logging.getLogger('ibm_watsonx_ai')
+                original_level = ibm_logger.level
+                ibm_logger.setLevel(py_logging.CRITICAL)
+                
+                combined_cert_path = None
+                try:
+                    # Create credentials object for CPD (Lightweight)
+                    credentials_params = {
+                        "url": url,
+                        "api_key": api_key,
+                        "username": username,
+                        "version": "5.3",
+                        "instance_id": "openshift"
+                    }
+                    
+                    # Add SSL certificate if provided
+                    # If cert_path is a file, get its parent directory for processing
+                    # If cert_path is a directory, use it directly
+                    if cert_path and os.path.exists(cert_path):
+                        if os.path.isfile(cert_path):
+                            cert_folder = os.path.dirname(cert_path)
+                        else:
+                            cert_folder = cert_path
+                        
+                        # Use clean_and_combine_pem_files to properly handle certificate chains
+                        cert_result = clean_and_combine_pem_files(
+                            self._logger,
+                            cert_folder,
+                            self._TMP_DIR,
+                            "watsonx_lightweight"
+                        )
+                        
+                        if cert_result is not None:
+                            combined_cert_path, _ = cert_result
+                            if combined_cert_path and os.path.exists(combined_cert_path):
+                                credentials_params["verify"] = combined_cert_path
+                                progress.log()
+                                progress.log(f"Using combined certificate bundle for SSL verification")
+                            else:
+                                progress.log()
+                                progress.log(Panel.fit(
+                                    Text("Warning: Could not process SSL certificate. Attempting connection without certificate verification."),
+                                    style="bold yellow"))
+                        else:
+                            progress.log()
+                            progress.log(Panel.fit(
+                                Text("Warning: Could not process SSL certificate. Attempting connection without certificate verification."),
+                                style="bold yellow"))
+                    
+                    credentials = Credentials(**credentials_params)
+
+                    # Try to create an API client to validate credentials
+                    try:
+                        client = APIClient(credentials)
+                        # Try to get client details to verify connection
+                        client.version
+                        
+                        progress.log()
+                        progress.log(f"WatsonX Lightweight credentials validated successfully")
+                        return True
+
+                    except Exception as client_error:
+                        progress.log()
+                        progress.log(f"Failed to validate WatsonX Lightweight credentials: {str(client_error)}")
+                        return False
+                finally:
+                    # Restore original logging level
+                    ibm_logger.setLevel(original_level)
+                    # Clean up temporary combined certificate file
+                    if combined_cert_path and os.path.exists(combined_cert_path):
+                        try:
+                            os.remove(combined_cert_path)
+                            self._logger.debug(f"Cleaned up temporary certificate file: {combined_cert_path}")
+                        except Exception as cleanup_error:
+                            self._logger.debug(f"Could not clean up temporary certificate file: {cleanup_error}")
+
+        except ImportError:
+            progress.log()
+            progress.log(f"ibm-watsonx-ai package not installed. Please install it using: pip install ibm-watsonx-ai")
+            self._logger.error("ibm-watsonx-ai package not installed")
+            return False
+        except Exception as e:
+            progress.log()
+            progress.log(f"Exception occurred while validating WatsonX Lightweight: {str(e)}")
+            self._logger.exception(
+                f"Exception from validate.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")
+            return False
+
+    # Function to verify all defined provider API credentials
     def validate_ai_provider_apis(self, task, progress):
-        """ Verify Provider API and Space ID """
+        """ Verify Provider API credentials based on provider type """
         try:
 
-
-            progress.log(Panel.fit(Text("Verifying AI Provider API Keys and Space IDs"), style="bold cyan"))
+            progress.log(Panel.fit(Text("Verifying AI Provider Credentials"), style="bold cyan"))
             progress.log()
 
             provider_api_passed = []
 
             for ai_provider in self._content_assistant_prop["_ai_providers_ids"]:
-                # Tracker for API and Space ID verification
-
                 provider_name = self._content_assistant_prop[ai_provider]["AI_PROVIDER_LABEL"]
                 provider_api_key = self._content_assistant_prop[ai_provider]["API_KEY"]
-                provider_space_id = self._content_assistant_prop[ai_provider]["SPACE_ID"]
+                provider_url = self._content_assistant_prop[ai_provider].get("URL", "")
 
                 progress.log()
-                progress.log(f"Verifying API Key and Space ID for {provider_name}...")
+                progress.log(f"Verifying credentials for {provider_name}...")
 
-                if not provider_api_key or not provider_space_id:
+                # Check if this is SaaS (has SPACE_ID) or Lightweight (has USERNAME)
+                if "SPACE_ID" in self._content_assistant_prop[ai_provider]:
+                    # WatsonX SaaS validation
+                    provider_space_id = self._content_assistant_prop[ai_provider]["SPACE_ID"]
+                    
+                    if not provider_api_key or not provider_space_id or not provider_url:
+                        progress.log()
+                        progress.log(Panel.fit(
+                            Text(f"API Key, Space ID, or URL is missing for {provider_name}. Please check the configuration."),
+                                 style="bold red"))
+                        self._logger.info(f"API Key, Space ID, or URL is missing for {provider_name}.")
+                        provider_api_passed.append(False)
+                        self.is_validated[ai_provider] = False
+                        progress.advance(task)
+                        continue
+
+                    # Validate using WatsonX SaaS method
+                    validation_success = self.validate_watsonx_saas(provider_api_key, provider_space_id, provider_url, progress)
+
+                elif "USERNAME" in self._content_assistant_prop[ai_provider]:
+                    # WatsonX Lightweight validation
+                    provider_username = self._content_assistant_prop[ai_provider]["USERNAME"]
+                    
+                    if not provider_api_key or not provider_username or not provider_url:
+                        progress.log()
+                        progress.log(Panel.fit(
+                            Text(f"API Key, Username, or URL is missing for {provider_name}. Please check the configuration."),
+                                 style="bold red"))
+                        self._logger.info(f"API Key, Username, or URL is missing for {provider_name}.")
+                        provider_api_passed.append(False)
+                        self.is_validated[ai_provider] = False
+                        progress.advance(task)
+                        continue
+
+                    # Check for SSL certificate if SSL is enabled
+                    cert_folder = None
+                    if self._content_assistant_prop[ai_provider].get("SSL_ENABLED", False):
+                        # Determine the provider number for folder naming
+                        provider_number = self._content_assistant_prop["_ai_providers_ids"].index(ai_provider) + 1
+                        if provider_number == 1:
+                            ai_provider_folder = os.path.join(self._ssl_cert_folder, "ai-provider")
+                        else:
+                            ai_provider_folder = os.path.join(self._ssl_cert_folder, f"ai-provider{provider_number}")
+                        
+                        # Check if certificate folder exists and has certificates
+                        if os.path.exists(ai_provider_folder):
+                            cert_file = self.__get_file_from_folder(ai_provider_folder, ['.crt', '.pem', '.cert'])
+                            if cert_file:
+                                # Pass the folder path instead of individual file for proper certificate chain handling
+                                cert_folder = ai_provider_folder
+                                cert_filename = os.path.basename(cert_file)
+                                progress.log()
+                                progress.log(f"Using SSL certificate folder: {os.path.basename(ai_provider_folder)}")
+                            else:
+                                progress.log()
+                                progress.log(Panel.fit(
+                                    Text(f"SSL is enabled but no certificate found for {provider_name}"),
+                                         style="bold yellow"))
+
+                    # Validate using WatsonX Lightweight method
+                    validation_success = self.validate_watsonx_lightweight(provider_api_key, provider_username, provider_url, progress, cert_folder)
+
+                else:
                     progress.log()
                     progress.log(Panel.fit(
-                        Text(f"API Key or Space ID is missing for {provider_name}. Please check the configuration."),
+                        Text(f"Unknown provider type for {provider_name}. Missing SPACE_ID or USERNAME."),
                              style="bold red"))
-                    self._logger.info(f"API Key or Space ID is missing for {provider_name}.")
+                    self._logger.info(f"Unknown provider type for {provider_name}.")
                     provider_api_passed.append(False)
                     self.is_validated[ai_provider] = False
                     progress.advance(task)
                     continue
 
-
-                # Query IAM API to get bearer token
-                bearer_token, iam_success = self.query_iam_api(provider_api_key, progress)
-
-                if not iam_success:
+                if not validation_success:
                     progress.log()
                     progress.log(Panel.fit(
-                        Text(f"Failed to verify API Key for {provider_name}. Please check the configuration."),
+                        Text(f"Failed to verify credentials for {provider_name}. Please check the configuration."),
                              style="bold red"))
-                    self._logger.info(f"Failed to verify API Key for {provider_name}.")
-                    provider_api_passed.append(False)
-                    self.is_validated[ai_provider] = False
-                    progress.advance(task)
-                    continue
-
-                # Test Space ID with bearer token
-                space_id_valid = self.test_space_id(bearer_token, provider_space_id, progress)
-
-                if not space_id_valid:
-                    progress.log()
-                    progress.log(Panel.fit(
-                        Text(f"Space ID is invalid for {provider_name}. Please check the configuration."),
-                             style="bold red"))
-                    self._logger.info(f"Space ID is invalid for {provider_name}.")
+                    self._logger.info(f"Failed to verify credentials for {provider_name}.")
                     provider_api_passed.append(False)
                     self.is_validated[ai_provider] = False
                     progress.advance(task)
@@ -397,26 +528,26 @@ class Validate:
                 provider_api_passed.append(True)
                 self.is_validated[ai_provider] = True
                 progress.log()
-                progress.log(Panel.fit(Text(f"API Key and Space ID verified successfully for Provider: {provider_name}"), style="bold green"))
+                progress.log(Panel.fit(Text(f"Credentials verified successfully for Provider: {provider_name}"), style="bold green"))
                 progress.advance(task)
 
 
             if all(provider_api_passed):
                 progress.log()
-                progress.log(Panel.fit(Text("All Provider API Keys and Space IDs verified successfully!"), style="bold green"))
-                self._logger.info("All Provider API Keys and Space IDs verified successfully!")
+                progress.log(Panel.fit(Text("All Provider credentials verified successfully!"), style="bold green"))
+                self._logger.info("All Provider credentials verified successfully!")
                 return True
 
             else:
                 progress.log()
-                progress.log(Panel.fit(Text("Some Provider API Keys or Space IDs are missing or invalid. Please check the configuration."), style="bold red"))
-                self._logger.info("Some Provider API Keys or Space IDs are missing or invalid.")
+                progress.log(Panel.fit(Text("Some Provider credentials are missing or invalid. Please check the configuration."), style="bold red"))
+                self._logger.info("Some Provider credentials are missing or invalid.")
                 return False
 
         except Exception as e:
             progress.log()
             progress.log(Panel.fit(
-                Text(f"An error occurred while verifying provider API keys and space IDs: {str(e)}"),
+                Text(f"An error occurred while verifying provider credentials: {str(e)}"),
                      style="bold red"))
             self._logger.exception(
                 f"Exception from validate.py script in {inspect.currentframe().f_code.co_name} function -  {str(e)}")

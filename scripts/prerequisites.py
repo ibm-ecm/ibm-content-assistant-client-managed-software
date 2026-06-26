@@ -50,6 +50,7 @@ from helper_scripts.generate.generate_cr import GenerateCR
 from helper_scripts.generate.generate_secrets import GenerateSecrets
 from helper_scripts.property import property as p
 from helper_scripts.property.read_prop import *
+from helper_scripts.property.read_prop import ReadPropOpenSearch
 from helper_scripts.utilities.interface import clear, generate_gather_results, generate_generate_results, \
     display_issues, display_prereq_passed
 from helper_scripts.utilities.prerequisites_utilites import zip_folder, \
@@ -57,7 +58,7 @@ from helper_scripts.utilities.prerequisites_utilites import zip_folder, \
 from helper_scripts.utilities.utilities import read_version_toml, prereq_checks
 from helper_scripts.validate import validate as v
 
-__version__ = "2.0.1"
+__version__ = "3.0.0"
 
 app = typer.Typer()
 state = {
@@ -210,7 +211,12 @@ def gather():
         gather.collect_platform_ingress()
 
         clear(console)
-        gather.collect_vector_db_details()
+        gather.collect_ai_provider_type()
+
+        # Only collect vector database details if not using OpenSearch
+        if not gather.create_opensearch_cluster:
+            clear(console)
+            gather.collect_vector_db_details()
 
         # clear(console)
         # gather.collect_content_assistant_admin_access()
@@ -234,8 +240,11 @@ def gather():
         gather.silent_namespace()
         gather.silent_platform()
         gather.silent_network_policies_support()
-        #gather.silent_license_model()
-        gather.silent_vector_db()
+        gather.silent_license_model()
+        gather.silent_ai_provider_type()
+        # Only collect vector database details if not using OpenSearch
+        if not gather.create_opensearch_cluster:
+            gather.silent_vector_db()
         gather.silent_ai_provider_count()
         gather.error_check()
 
@@ -256,11 +265,18 @@ def gather():
 
     # function call to create property files
     property_obj = p.Property(gather, os.getcwd(), state["logger"], console)
-    property_obj.create_property_structure()
-
+    
     # create and populate the content assistant property and vector database property file
+    # Note: populate methods must be called BEFORE create_property_structure
+    # because they add SSL folder names to ssl_directory_list
     content_assistant_properties = property_obj.populate_content_assistant_details()
+    
+    # Always populate vector database properties
+    # If OpenSearch is selected, it will be prefilled with OpenSearch details
     vector_database_properties = property_obj.populate_vector_database_details()
+    
+    # Now create the property structure with all SSL folders
+    property_obj.create_property_structure()
 
     property_obj.create_content_assistant_propertyfile(content_assistant_properties)
     property_obj.create_vector_database_propertyfile(vector_database_properties)
@@ -337,9 +353,6 @@ def generate():
         if os.path.exists(ingress_prop_file):
             ingress_prop = ReadPropIngress(ingress_prop_file, state["logger"])
 
-
-
-
         # Create dictionaries for property files if not None
         if vector_database_prop:
             vector_database_prop_dict = vector_database_prop.to_dict()
@@ -384,6 +397,19 @@ def generate():
     cert_failed = len(missing_certs) > 0 or len(incorrect_certs) > 0 or (
             trusted_certs_present and len(invalid_trusted_certs) > 0)
 
+    # Validate OpenSearch password strength if using CP4BA OpenSearch
+    password_validation_errors = {}
+    if deployment_prop_dict.get("LICENSE", "").upper() == "CP4BA":
+        for vector_database_id in vector_database_prop_dict.get("_vector_database_ids", []):
+            database_url = vector_database_prop_dict.get(vector_database_id, {}).get("DATABASE_URL", "")
+            if "ica-opensearch" in database_url:
+                from helper_scripts.utilities.prerequisites_utilites import validate_opensearch_password
+                password = vector_database_prop_dict.get(vector_database_id, {}).get("DATABASE_USER_PASSWORD", "")
+                if password and password != "<Required>":
+                    is_valid, error_msg = validate_opensearch_password(password)
+                    if not is_valid:
+                        password_validation_errors[vector_database_id] = error_msg
+                        state["logger"].error(f"OpenSearch password validation failed for {vector_database_id}: {error_msg}")
 
     # Collect missing fields
     # All missing required fields are collected in each instance
@@ -392,7 +418,22 @@ def generate():
     if content_assistant_prop.missing_required_fields():
         required_fields = content_assistant_prop.required_fields
 
-    if content_assistant_prop.missing_required_fields() or cert_failed:
+    if content_assistant_prop.missing_required_fields() or cert_failed or password_validation_errors:
+        # Add password validation errors to the display
+        if password_validation_errors:
+            print()
+            print(Panel.fit(Text("OpenSearch Password Validation Failed", style="bold red")))
+            for db_id, error_msg in password_validation_errors.items():
+                print(Panel.fit(Text(f"{db_id}: {error_msg}", style="red")))
+            print()
+            print(Panel.fit(Text("Please update the DATABASE_USER_PASSWORD in cas_vector_database.toml to meet OpenSearch security requirements:\n"
+                                "- At least 8 characters\n"
+                                "- At least one uppercase letter\n"
+                                "- At least one lowercase letter\n"
+                                "- At least one digit\n"
+                                "- At least one special character (!@#$%^&*()_+-=.)\n"
+                                "- Special characters are limited to shell-safe and URL-safe characters", style="yellow")))
+        
         layout = display_issues(generate_folder=generated_folder, required_fields=required_fields,
                                 certs=missing_certs, incorrect_certs=incorrect_certs,mode="generate")
         print(layout)
@@ -418,6 +459,13 @@ def generate():
 
         if content_assistant_prop:
             generate_secrets.create_content_assistant_secret()
+            
+            # Create AI provider SSL secrets for lightweight providers
+            for ai_provider_id in content_assistant_prop_dict["_ai_providers_ids"]:
+                provider_number = content_assistant_prop_dict["_ai_providers_ids"].index(ai_provider_id) + 1
+                if content_assistant_prop_dict[ai_provider_id].get("SSL_ENABLED", False):
+                    generate_secrets.create_ai_provider_ssl_secret(ai_provider_id=ai_provider_id, provider_number=provider_number)
+            
             for vector_database_id in vector_database_prop_dict["_vector_database_ids"]:
                 generate_secrets.create_vector_database_secret(id=vector_database_id,database_number=(vector_database_prop_dict["_vector_database_ids"].index(vector_database_id)+1))
                 if vector_database_prop_dict[vector_database_id]["DATABASE_SSL_ENABLED"]:
@@ -440,10 +488,183 @@ def generate():
                         logger=state["logger"])
 
         cr.generate_cr()
+        
+        # Generate OpenSearch YAMLs if CP4BA license and OpenSearch cluster hostname is present
+        if (deployment_prop_dict.get("LICENSE", "").upper() == "CP4BA" and
+            deployment_prop_dict.get("OPENSEARCH_CLUSTER_HOSTNAME")):
+            # Read storage properties from deployment property file
+            storage_props = {}
+            with open(deployment_prop_file, 'r') as f:
+                import toml
+                full_deployment = toml.load(f)
+                storage_props['SLOW_FILE_STORAGE_CLASSNAME'] = full_deployment.get('SLOW_FILE_STORAGE_CLASSNAME', '<Required>')
+                storage_props['BLOCK_STORAGE_CLASS'] = full_deployment.get('BLOCK_STORAGE_CLASS', '<Required>')
+            
+            generate_opensearch_yamls(namespace=namespace,
+                                     deployment_properties=deployment_prop_dict,
+                                     storage_properties=storage_props,
+                                     vector_database_properties=vector_database_prop_dict,
+                                     generated_folder=generated_folder,
+                                     logger=state["logger"])
 
     layout = generate_generate_results(generated_folder)
 
     print(layout)
+
+
+def generate_opensearch_yamls(namespace, deployment_properties, storage_properties, vector_database_properties, generated_folder, logger):
+    """
+    Generate OpenSearch cluster YAMLs from templates
+    Reads storage classes from storage_properties, cluster hostname from deployment_properties,
+    and passwords from vector_database_properties
+    """
+    import base64
+    import shutil
+    from helper_scripts.utilities.prerequisites_utilites import generate_secure_password
+    
+    try:
+        logger.info("Generating OpenSearch cluster YAMLs")
+        
+        # Source and destination paths
+        opensearch_descriptors_folder = os.path.join(os.getcwd(), "..", "descriptors", "opensearch")
+        opensearch_generated_folder = os.path.join(generated_folder, "opensearch")
+        
+        # Create opensearch folder in generated files
+        if not os.path.exists(opensearch_generated_folder):
+            os.makedirs(opensearch_generated_folder)
+        
+        # Get values from storage properties (storage configuration)
+        slow_file_storage_class = storage_properties.get("SLOW_FILE_STORAGE_CLASSNAME", "<Required>")
+        block_storage_class = storage_properties.get("BLOCK_STORAGE_CLASS", "<Required>")
+        
+        # Get cluster hostname from deployment properties
+        cluster_hostname = deployment_properties.get("OPENSEARCH_CLUSTER_HOSTNAME", "<Required>")
+        
+        # Get password from vector database properties (VECTORDB section)
+        vectordb_props = vector_database_properties.get("VECTORDB", {})
+        genai_password = vectordb_props.get("DATABASE_USER_PASSWORD", "<Required>")
+        
+        # Generate a random secure password for the admin user
+        admin_password = generate_secure_password(length=24)
+        logger.info(f"Generated secure admin password for OpenSearch cluster")
+        
+        # Base64 encode passwords
+        admin_password_b64 = base64.b64encode(admin_password.encode()).decode()
+        genai_password_b64 = base64.b64encode(genai_password.encode()).decode()
+        
+        # List of YAML files to process
+        yaml_files = [
+            "opensearch_admin_secret.yaml",
+            "opensearch_cluster.yaml",
+            "opensearch_cluster_permission_job.yaml",
+            "opensearch_genai_secret.yaml",
+            "opensearch_route.yaml"
+        ]
+        
+        for yaml_file in yaml_files:
+            source_file = os.path.join(opensearch_descriptors_folder, yaml_file)
+            dest_file = os.path.join(opensearch_generated_folder, yaml_file)
+            
+            if os.path.exists(source_file):
+                # Read the file
+                with open(source_file, 'r') as f:
+                    content = f.read()
+                
+                # Replace placeholders
+                content = content.replace("REPLACE_NAMESPACE", namespace)
+                
+                # For opensearch_cluster.yaml, use different storage classes for different purposes
+                if "cluster.yaml" in yaml_file:
+                    # Replace snapshotPVCStorageClass with SLOW_FILE_STORAGE_CLASSNAME
+                    content = content.replace("snapshotPVCStorageClass: REPLACE_STORAGECLASS",
+                                            f"snapshotPVCStorageClass: {slow_file_storage_class}")
+                    # Replace data and deployment storageClass with BLOCK_STORAGE_CLASS
+                    content = content.replace("storageClass: REPLACE_STORAGECLASS",
+                                            f"storageClass: {block_storage_class}")
+                else:
+                    # For other files, use the default replacement
+                    content = content.replace("REPLACE_STORAGECLASS", slow_file_storage_class)
+                
+                content = content.replace('"<base64-encoded-password>"', f'"{admin_password_b64}"')
+                
+                # For opensearch_route.yaml, replace cluster hostname placeholder
+                if "route" in yaml_file:
+                    content = content.replace("apps.<cluster-name>.cp.fyre.ibm.com", cluster_hostname)
+                
+                # For genai secret, replace the genai password
+                if "genai_secret" in yaml_file:
+                    content = content.replace(f'"{admin_password_b64}"', f'"{genai_password_b64}"')
+                
+                # Write the modified content
+                with open(dest_file, 'w') as f:
+                    f.write(content)
+                
+                logger.info(f"Generated OpenSearch YAML: {yaml_file}")
+            else:
+                logger.warning(f"Source file not found: {source_file}")
+        
+        logger.info(f"OpenSearch YAMLs generated in: {opensearch_generated_folder}")
+        
+        # Create a README file with vector database configuration instructions
+        readme_content = f"""# OpenSearch Cluster Configuration
+
+## Generated Files
+
+The following OpenSearch cluster YAMLs have been generated:
+
+1. **opensearch_admin_secret.yaml** - Admin user credentials
+2. **opensearch_genai_secret.yaml** - GenAI service user credentials
+3. **opensearch_route.yaml** - TLS certificate for OpenSearch routes
+4. **opensearch_cluster.yaml** - OpenSearch cluster configuration
+5. **opensearch_cluster_permission_job.yaml** - Job to configure permissions
+
+## Deployment Instructions
+
+1. Apply the secrets and certificate first:
+   ```bash
+   kubectl apply -f opensearch_admin_secret.yaml
+   kubectl apply -f opensearch_genai_secret.yaml
+   kubectl apply -f opensearch_route.yaml
+   ```
+
+2. Apply the OpenSearch cluster:
+   ```bash
+   kubectl apply -f opensearch_cluster.yaml
+   ```
+
+3. Wait for the cluster to be ready, then apply the permission job:
+   ```bash
+   kubectl apply -f opensearch_cluster_permission_job.yaml
+   ```
+
+## Vector Database Configuration
+
+When using this OpenSearch cluster as your vector database, use the following values in your cas_vector_database.toml:
+
+```toml
+[VECTORDB]
+DATABASE_TYPE = "Opensearch"
+DATABASE_URL = "https://ica-opensearch.{namespace}.svc.cluster.local:9200"
+DATABASE_USERNAME = "genai-service-user"
+DATABASE_USER_PASSWORD = "{genai_password}"
+DATABASE_SSL_ENABLED = true
+DATABASE_AUTH_TYPE = "BASICAUTH"
+```
+
+**Important Notes:**
+- The SSL certificate secret name will be automatically set to `ica-opensearch-tls-secret-route` in the CR when OpenSearch creation is enabled
+- The certificate will be automatically created by cert-manager using the opensearch_route.yaml file
+- Do NOT manually specify `DATABASE_SSL_CERTIFICATE_SECRET_NAME` in the property file - it will be handled automatically by the generate script
+"""
+        
+        readme_file = os.path.join(opensearch_generated_folder, "README.md")
+        with open(readme_file, 'w') as f:
+            f.write(readme_content)
+        
+        logger.info("Generated README.md with deployment instructions")
+        
+    except Exception as e:
+        logger.exception(f"Exception generating OpenSearch YAMLs: {str(e)}")
 
 
 

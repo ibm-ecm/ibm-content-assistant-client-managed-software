@@ -16,5 +16,12 @@
     "comment": [
       "Platform type."
     ]
+  },
+  "OPENSEARCH_CLUSTER_HOSTNAME": {
+    "value": "",
+    "comment": [
+      "Cluster hostname/domain for OpenSearch route (only used when OpenSearch is selected as vector database)",
+      "Example: apps.<cluster-name>.cp.fyre.ibm.com"
+    ]
   }
 }

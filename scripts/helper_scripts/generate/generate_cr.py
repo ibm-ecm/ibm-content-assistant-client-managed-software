@@ -206,9 +206,9 @@ class GenerateCR:
                 ssl_cert_secrets = collect_visible_files(
                     os.path.join(self._generate_folder, "ssl"))
                 for secret in ssl_cert_secrets:
-                    # check if the secret is related to idp or scim
-                    # check if the secret name contains idp or oidc
-                    if "idp" in secret.lower()  or "scim" in secret.lower():
+                    # check if the secret is related to idp, scim, or ai-provider
+                    # check if the secret name contains idp, oidc, scim, or ai-provider
+                    if "idp" in secret.lower() or "scim" in secret.lower() or "ai-provider" in secret.lower():
                         secret_name = secret.split(".")[0]
                         base_dict["spec"]["shared_configuration"]["trusted_certificate_list"].append(
                             secret_name)
@@ -241,6 +241,12 @@ class GenerateCR:
                 vector_database_dict["spec"]["vector_database"]["vector_database_oidc_token_endpoint"] = self._vector_database_properties[vector_database_id]["DATABASE_OIDC_ENDPOINT"]
             vector_database_dict["spec"]["vector_database"]["vector_database_ssl_enabled"] = self._vector_database_properties[vector_database_id]["DATABASE_SSL_ENABLED"]
             vector_database_dict["spec"]["vector_database"]["vector_database_type"] = self._vector_database_properties[vector_database_id]["DATABASE_TYPE"]
+            
+            # Check if using OpenSearch managed by CP4BA operator and update certificate secret name
+            database_url = self._vector_database_properties[vector_database_id]["DATABASE_URL"]
+            if "ica-opensearch" in database_url:
+                vector_database_dict["spec"]["vector_database"]["vector_database_certificate"] = "ica-opensearch-tls-secret"
+                self._logger.info("Using OpenSearch managed by CP4BA operator - certificate set to ica-opensearch-tls-secret")
 
             self._merged_data["spec"].update(vector_database_dict["spec"])
 

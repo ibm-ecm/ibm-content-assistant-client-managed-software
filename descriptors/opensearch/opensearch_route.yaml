@@ -1,0 +1,51 @@
+################################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ica-opensearch-tls-secret
+  namespace: REPLACE_NAMESPACE # Replace with your CP4BA namespace
+  labels:
+    app.kubernetes.io/instance: single
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cluster
+    app.kubernetes.io/part-of: ibm-opensearch-operator
+spec:
+  commonName: Cluster
+  dnsNames:
+    - '*.cluster.local'
+    - '*.svc.cluster.local'
+    - localhost
+    - 127.0.0.1
+    - ica-opensearch-REPLACE_NAMESPACE.apps.<cluster-name>.cp.fyre.ibm.com  #Update with your cluster domain
+    - ica-opensearch
+    - ica-opensearch.REPLACE_NAMESPACE.svc
+    - ica-opensearch.REPLACE_NAMESPACE.svc.cluster.local
+    - ica-opensearch-all
+    - ica-opensearch-all.REPLACE_NAMESPACE.svc
+    - ica-opensearch-all.REPLACE_NAMESPACE.svc.cluster.local
+  duration: 2160h0m0s
+  issuerRef:
+    kind: Issuer
+    name: opensearch-tls-issuer # Reuses the CP4BA issuer with icp4a-root-ca
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS8
+    size: 2048
+  renewBefore: 720h0m0s
+  secretName: ica-opensearch-tls-secret
+  usages:
+    - cert sign
+    - signing
+    - digital signature
+    - key encipherment
+    - server auth
+    - client auth

@@ -486,10 +486,10 @@ class GatherOptions:
                                    style="link hhttps://ibm.biz/CAS_License_1_0_0")
             cas_notices_url = Text("https://ibm.biz/CAS_Notices_1_0_0",
                                    style="link https://ibm.biz/CAS_Notices_1_0_0")
-            cp4ba_license_url = Text("https://ibm.biz/cp4ba_license_2501",
-                                     style="link https://ibm.biz/cp4ba_license_2501")
-            cp4ba_reserved_license_url = Text("https://ibm.biz/cp4ba-reserved-license-2501",
-                                              style="link https://ibm.biz/cp4ba-reserved-license-2501")
+            cp4ba_license_url = Text("https://ibm.biz/cp4ba_license_2600",
+                                     style="link https://ibm.biz/cp4ba_license_2600")
+            cp4ba_reserved_license_url = Text("https://ibm.biz/cp4ba-reserved-license-2600",
+                                              style="link https://ibm.biz/cp4ba-reserved-license-2600")
 
             license_message = (
                 f"IMPORTANT: Review the license information for the product bundle you are deploying.\n\n"

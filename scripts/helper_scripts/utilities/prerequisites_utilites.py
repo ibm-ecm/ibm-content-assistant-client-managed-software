@@ -186,13 +186,37 @@ def check_ssl_folders(content_assistant_prop=None,vector_database_prop=None,ssl_
             if folder == "trusted-certs":
                 ssl_folders.remove(folder)
 
-        # Creating list of different ssl folders: ldap, db, idp, scim
+        # Creating list of different ssl folders: ldap, db, idp, scim, ai-provider
         content_assistant_admin_access_folders = list(filter(lambda x: "cli-admin" in x, ssl_folders))
         vector_database_folders = set(ssl_folders) - set(content_assistant_admin_access_folders)
 
-        # base logic for ldap cert folder
+        # Check AI provider SSL certificates for lightweight providers
+        if content_assistant_prop and "_ai_providers_ids" in content_assistant_prop:
+            for ai_provider_id in content_assistant_prop["_ai_providers_ids"]:
+                # Check if this provider has SSL enabled (lightweight providers only)
+                if content_assistant_prop[ai_provider_id].get("SSL_ENABLED", False):
+                    # Determine the provider number for folder naming
+                    provider_number = content_assistant_prop["_ai_providers_ids"].index(ai_provider_id) + 1
+                    if provider_number == 1:
+                        ai_provider_folder = os.path.join(ssl_cert_folder, "ai-provider")
+                        cert_id = "ai-provider"
+                    else:
+                        ai_provider_folder = os.path.join(ssl_cert_folder, f"ai-provider{provider_number}")
+                        cert_id = f"ai-provider{provider_number}"
+                    
+                    # Check for AI provider SSL folder and certificates
+                    check_specific_ssl_folder(cert_folder=ai_provider_folder, cert_id=cert_id,
+                                            missing_cert=missing_cert, incorrect_cert=incorrect_cert)
+
+        # base logic for vector database cert folder
         for vector_database_id in vector_database_prop["_vector_database_ids"]:
             if vector_database_prop[vector_database_id]["DATABASE_SSL_ENABLED"]:
+                # Skip SSL certificate check for OpenSearch managed by CP4BA operator
+                # The operator manages certificates via cert-manager
+                database_url = vector_database_prop[vector_database_id].get("DATABASE_URL", "")
+                if "ica-opensearch" in database_url:
+                    continue
+                
                 # Check for vector db ssl folder
                 vector_database_folder = os.path.join(ssl_cert_folder, str(vector_database_id).lower())
                 check_specific_ssl_folder(cert_folder=vector_database_folder,cert_id=str(vector_database_id).lower(),missing_cert=missing_cert,incorrect_cert=incorrect_cert,vector_db_folder=True)
@@ -871,14 +895,54 @@ def encode_secret_contents(input_dict: dict) -> dict:
 
     return result
 
+def validate_opensearch_password(password: str) -> tuple[bool, str]:
+    """
+    Validate password meets OpenSearch security requirements.
+    OpenSearch requires passwords to be at least 8 characters with:
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special character (shell-safe and URL-safe)
+    
+    Returns: (is_valid, error_message)
+    """
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    
+    if not any(c.isupper() for c in password):
+        return False, "Password must contain at least one uppercase letter"
+    
+    if not any(c.islower() for c in password):
+        return False, "Password must contain at least one lowercase letter"
+    
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least one digit"
+    
+    # Shell-safe and URL-safe special characters only
+    # Excludes: {} [] which break URLs, and other problematic characters
+    special_chars = "!@#$%^&*()_+-=."
+    if not any(c in special_chars for c in password):
+        return False, "Password must contain at least one special character (!@#$%^&*()_+-=.)"
+    
+    return True, ""
+
+
 def generate_secure_password(length=24) -> str:
+    """
+    Generate a secure password that meets OpenSearch requirements.
+    Uses only shell-safe and URL-safe special characters to avoid breaking
+    URLs or shell scripts.
+    """
     alphabet = (
         "ABCDEFGHJKLMNPQRSTUVWXYZ"  # No I or O
         "abcdefghijkmnopqrstuvwxyz"  # No l
         "23456789"  # No 0 or 1
     )
 
-    alphabet += "!@#$%^&*()-_=+[]{}|;:,.<>?/"
+    # Shell-safe and URL-safe special characters only
+    # Excludes: {} [] / | ; : , < > ? (which can break URLs or shell scripts)
+    # Curly braces and square brackets have special meaning in URLs
+    alphabet += "!@#$%^&*()-_=+."
 
     password = ''.join(secrets.choice(alphabet) for _ in range(length))
     return password

@@ -33,6 +33,14 @@ NAMESPACE = "<Namespace>"
 # Choose the licensing model for the Product you are installing - Valid values: ['FNCM', "CP4BA"]
 LICENSE = "FNCM"
 
+# ####################################################
+# ##          OpenSearch Cluster Configuration      ##
+# ####################################################
+# Only applicable if LICENSE = "CP4BA"
+# Set to true to create and configure an OpenSearch cluster using existing OpenSearch Operator
+# When enabled, OpenSearch configuration details will be collected in the property files after gather mode
+CREATE_OPENSEARCH_CLUSTER = false
+
 # Platform of choice - Valid values: [1; 2]
 # 1. OCP
 # 2. CNCF
@@ -51,6 +59,11 @@ GENERATE_NETWORK_POLICIES = false
 
 # Number of AI providers to be used - Valid values: [1]
 AI_PROVIDER_COUNT = 1
+
+# AI Provider Type - Valid values: [1; 2]
+# 1. WatsonX SaaS (requires API Key, Space ID, and URL)
+# 2. WatsonX Lightweight (requires API Key, Username, and URL)
+AI_PROVIDER_TYPE = 1
 
 # ####################################################
 # ##           Vector Database Properties           ##

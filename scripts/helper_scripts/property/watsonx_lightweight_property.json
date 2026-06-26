@@ -11,16 +11,22 @@
       "Watson API Key"
     ]
   },
-  "SPACE_ID": {
+  "USERNAME": {
     "value": "<Required>",
     "comment": [
-      "Space ID"
+      "Username for WatsonX Lightweight Engine"
     ]
   },
   "URL": {
-    "value": "https://us-south.ml.cloud.ibm.com",
+    "value": "<Required>",
     "comment": [
-      "WatsonX Saas URL"
+      "WatsonX Lightweight Engine URL"
+    ]
+  },
+  "SSL_ENABLED": {
+    "value": true,
+    "comment": [
+      "Enable SSL for WatsonX Lightweight Engine connection"
     ]
   }
 }

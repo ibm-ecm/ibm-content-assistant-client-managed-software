@@ -16,7 +16,7 @@ metadata:
     app.kubernetes.io/instance: ibm-cas
     app.kubernetes.io/managed-by: ibm-cas
     app.kubernetes.io/name: ibm-cas
-    release: 1.0.2
+    release: 1.0.3
 spec:
   ## The version of the Content Assistant operator that is being used.
   appVersion: 1.0.0
@@ -231,7 +231,7 @@ spec:
     image:
       ## The default repository is the IBM Entitled Registry.
       repository: cp.icr.io/cp/cas/genaiconnector
-      tag: "1.0.2-IF001"
+      tag: "1.0.3"
 
       ## This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent

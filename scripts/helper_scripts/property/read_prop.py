@@ -118,6 +118,10 @@ class ReadPropIdp(ReadProp):
 class ReadPropDeployment(ReadProp):
     def __init__(self, propertyfile, logger):
         super().__init__(propertyfile, logger)
+class ReadPropOpenSearch(ReadProp):
+    def __init__(self, propertyfile, logger):
+        super().__init__(propertyfile, logger)
+
 
 
 class ReadPropImageTag(ReadProp):

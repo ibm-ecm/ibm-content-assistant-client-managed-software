@@ -17,7 +17,7 @@ metadata:
     app.kubernetes.io/instance: ibm-cas
     app.kubernetes.io/managed-by: ibm-cas
     app.kubernetes.io/name: ibm-cas
-    release: 1.0.2-IF001
+    release: 1.0.3
 spec:
   replicas: 1
   selector:
@@ -37,7 +37,7 @@ spec:
         app.kubernetes.io/instance: ibm-cas
         app.kubernetes.io/managed-by: ibm-cas
         app.kubernetes.io/name: ibm-cas
-        release: 1.0.2-IF001
+        release: 1.0.3
         com.ibm.cas.networking/egress-allow-all: 'true'
         com.ibm.cas.networking/egress-allow-k8s-services: 'true'
         com.ibm.cas.networking/egress-allow-ai-provider: 'true'
@@ -84,7 +84,7 @@ spec:
           args:
             - --leader-elect
             - --health-probe-bind-address=:8081
-          image: icr.io/cpopen/ibm-content-assistant-operator@sha256:b3c40e587f0ebacc92467a6cda2c6ae02c02976cd3aa9e3b7d7d89e59198119e
+          image: icr.io/cpopen/ibm-content-assistant-operator@sha256:ffec1b313ad1819fbd67f73ba0c603fc94b74b84792598c0aa9433ac6fe5d6d4
           imagePullPolicy: IfNotPresent
           name: manager
           env:

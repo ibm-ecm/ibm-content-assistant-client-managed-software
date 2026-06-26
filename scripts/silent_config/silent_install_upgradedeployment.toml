@@ -16,8 +16,8 @@
 
 # IBM Content Assistant Client Managed Software license information here: https://ibm.biz/CAS_License_1_0_0
 # IBM Software Notices here: https://ibm.biz/CAS_Notices_1_0_0
-# IBM Cloud Pak for Business Automation license information here: https://ibm.biz/cp4ba-license-2501
-# IBM Cloud Pak for Business Automation Reserved license here: https://ibm.biz/cp4ba-reserved-license-2501
+# IBM Cloud Pak for Business Automation license information here: https://ibm.biz/cp4ba_license_2600
+# IBM Cloud Pak for Business Automation Reserved license here: https://ibm.biz/cp4ba_reserved_license_2600
 
 # License Acceptance - Valid values: [true; false]
 LICENSE_ACCEPT = false

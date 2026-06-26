@@ -49,7 +49,9 @@ class Property:
         self._content_assistant_properties = read_json(self._json_directory, "admin_access_property.json")
         self._content_assistant_watsonx_properties = read_json(self._json_directory,
                                                                "watsonx_property.json")
-        self._ingress_properties = read_json(self._json_directory, "ingress_property.json")
+        self._content_assistant_watsonx_lightweight_properties = read_json(self._json_directory,
+                                                                           "watsonx_lightweight_property.json")
+        self._ingress_properties = read_json(self._json_directory, "ingress_property.json")                                                                   
 
 
     # Create a property that gets the property folder
@@ -98,7 +100,10 @@ class Property:
             deployment_dict['CAS_VERSION']['value'] = self._gather.cas_version
             deployment_dict['LICENSE']['value'] = self._gather.license_model.upper()
             deployment_dict['PLATFORM']['value'] = self._gather.platform
-
+            
+            # Add OpenSearch cluster hostname if CP4BA and OpenSearch is selected
+            if self._gather.license_model.upper() == "CP4BA" and self._gather.create_opensearch_cluster:
+                deployment_dict['OPENSEARCH_CLUSTER_HOSTNAME']['value'] = "<Required>"
 
             return deployment_dict
 
@@ -134,6 +139,9 @@ class Property:
         deployment_properties = self.__populate_deployment_dict()
 
         for key, value in deployment_properties.items():
+            # Only write OPENSEARCH_CLUSTER_HOSTNAME if OpenSearch is selected
+            if key == 'OPENSEARCH_CLUSTER_HOSTNAME' and not (self._gather.license_model.upper() == "CP4BA" and self._gather.create_opensearch_cluster):
+                continue
             self.__write_property(doc=deployment_doc,
                                   key=key,
                                   value=value['value'],
@@ -144,7 +152,15 @@ class Property:
         deployment_doc.add(comment("##                   File Storage                 ##"))
         deployment_doc.add(comment("####################################################"))
 
-        for key, value in self._storage_properties.items():
+        # Populate storage properties, conditionally setting BLOCK_STORAGE_CLASS for OpenSearch
+        storage_props = copy.deepcopy(self._storage_properties)
+        if self._gather.license_model.upper() == "CP4BA" and self._gather.create_opensearch_cluster:
+            storage_props['BLOCK_STORAGE_CLASS']['value'] = "<Required>"
+        
+        for key, value in storage_props.items():
+            # Only write BLOCK_STORAGE_CLASS if OpenSearch is selected
+            if key == 'BLOCK_STORAGE_CLASS' and not (self._gather.license_model.upper() == "CP4BA" and self._gather.create_opensearch_cluster):
+                continue
             self.__write_property(doc=deployment_doc,
                                   key=key,
                                   value=value['value'],
@@ -235,20 +251,36 @@ class Property:
             user_doc.add(comment("#############################################"))
             user_doc.add(comment("##         Vector Database Properties      ##"))
             user_doc.add(comment("#############################################"))
-            # Adjust the properties for AI provider section
-            for vector_db in self._gather.vector_db_details:
-                suffix = vector_db.get_db_label
+            
+            # Check if OpenSearch is being used (CP4BA with OpenSearch cluster)
+            if self._gather.license_model.upper() == "CP4BA" and self._gather.create_opensearch_cluster == True:
+                # For OpenSearch, iterate through the dictionary keys directly
+                for suffix in vector_database_properties.keys():
+                    vector_db_section = table()
+                    # loop through the db_properties dictionary
+                    for key, value in vector_database_properties[suffix].items():
+                        self.__write_property_table(section=vector_db_section,
+                                                    key=key,
+                                                    value=value['value'],
+                                                    note=value['comment'])
 
-                vector_db_section = table()
-                # loop through the db_properties dictionary
-                for key, value in vector_database_properties[suffix].items():
-                    self.__write_property_table(section=vector_db_section,
-                                                key=key,
-                                                value=value['value'],
-                                                note=value['comment'])
+                    user_doc.add(f"{suffix}", vector_db_section)
+                    user_doc.add(nl())
+            else:
+                # Original logic: Adjust the properties for AI provider section
+                for vector_db in self._gather.vector_db_details:
+                    suffix = vector_db.get_db_label
 
-                user_doc.add(f"{suffix}", vector_db_section)
-                user_doc.add(nl())
+                    vector_db_section = table()
+                    # loop through the db_properties dictionary
+                    for key, value in vector_database_properties[suffix].items():
+                        self.__write_property_table(section=vector_db_section,
+                                                    key=key,
+                                                    value=value['value'],
+                                                    note=value['comment'])
+
+                    user_doc.add(f"{suffix}", vector_db_section)
+                    user_doc.add(nl())
 
 
             user_doc.add(nl())
@@ -268,28 +300,53 @@ class Property:
             # Create a copy of the CA dictionary
             vector_database_properties_dict = {}
 
-            single_vector_database_properties_dict = {}
-            for i in range(self._gather.vector_database_number):
-                db_label = self._gather.vector_db_details[i].get_db_label
-                ssl_enabled = self._gather.vector_db_details[i].vector_db_ssl_enabled
+            # If OpenSearch is selected, prefill with OpenSearch details
+            if self._gather.license_model.upper() == "CP4BA" and self._gather.create_opensearch_cluster == True:
+                self._logger.info("Prefilling vector database with OpenSearch configuration")
+                single_vector_database_properties_dict = {}
                 for key in self._vector_database_properties.keys():
                     single_vector_database_properties_dict[key] = copy.deepcopy(self._vector_database_properties[key])
+                
+                # Prefill with OpenSearch configuration
+                single_vector_database_properties_dict['DATABASE_LABEL']['value'] = "VECTORDB"
+                single_vector_database_properties_dict['DATABASE_TYPE']['value'] = "opensearch"
+                single_vector_database_properties_dict['DATABASE_URL']['value'] = f"https://ica-opensearch.{self._gather.namespace}.svc.cluster.local:9200"
+                single_vector_database_properties_dict['DATABASE_USERNAME']['value'] = "genai-service-user"
+                single_vector_database_properties_dict['DATABASE_USER_PASSWORD']['value'] = "<Required>"
+                single_vector_database_properties_dict['DATABASE_SSL_ENABLED']['value'] = True
+                single_vector_database_properties_dict['DATABASE_AUTH_TYPE']['value'] = "BASICAUTH"
+                
+                # Remove OIDC fields for BASICAUTH
+                single_vector_database_properties_dict.pop('DATABASE_OIDC_ENDPOINT')
+                single_vector_database_properties_dict.pop('DATABASE_OIDC_CLIENT_ID')
+                single_vector_database_properties_dict.pop('DATABASE_OIDC_CLIENT_SECRET')
+                
+                vector_database_properties_dict["VECTORDB"] = copy.deepcopy(single_vector_database_properties_dict)
+            elif self._gather.vector_database_number > 0:
+                # Original logic for non-OpenSearch vector databases
+                # Only process if vector_database_number > 0 to avoid IndexError
+                single_vector_database_properties_dict = {}
+                for i in range(self._gather.vector_database_number):
+                    db_label = self._gather.vector_db_details[i].get_db_label
+                    ssl_enabled = self._gather.vector_db_details[i].vector_db_ssl_enabled
+                    for key in self._vector_database_properties.keys():
+                        single_vector_database_properties_dict[key] = copy.deepcopy(self._vector_database_properties[key])
 
-                single_vector_database_properties_dict['DATABASE_SSL_ENABLED']['value'] = ssl_enabled
+                    single_vector_database_properties_dict['DATABASE_SSL_ENABLED']['value'] = ssl_enabled
 
-                if self._gather.vector_db_details[i].get_db_auth_type == "BASICAUTH":
-                    single_vector_database_properties_dict.pop('DATABASE_OIDC_ENDPOINT')
-                    single_vector_database_properties_dict.pop('DATABASE_OIDC_CLIENT_ID')
-                    single_vector_database_properties_dict.pop('DATABASE_OIDC_CLIENT_SECRET')
-                    single_vector_database_properties_dict["DATABASE_AUTH_TYPE"]["value"] = "BASICAUTH"
-                else:
-                    #single_vector_database_properties_dict.pop('DATABASE_USERNAME')
-                    #single_vector_database_properties_dict.pop('DATABASE_USER_PASSWORD')
-                    single_vector_database_properties_dict["DATABASE_AUTH_TYPE"]["value"] = "OIDC"
+                    if self._gather.vector_db_details[i].get_db_auth_type == "BASICAUTH":
+                        single_vector_database_properties_dict.pop('DATABASE_OIDC_ENDPOINT')
+                        single_vector_database_properties_dict.pop('DATABASE_OIDC_CLIENT_ID')
+                        single_vector_database_properties_dict.pop('DATABASE_OIDC_CLIENT_SECRET')
+                        single_vector_database_properties_dict["DATABASE_AUTH_TYPE"]["value"] = "BASICAUTH"
+                    else:
+                        #single_vector_database_properties_dict.pop('DATABASE_USERNAME')
+                        #single_vector_database_properties_dict.pop('DATABASE_USER_PASSWORD')
+                        single_vector_database_properties_dict["DATABASE_AUTH_TYPE"]["value"] = "OIDC"
 
 
-                single_vector_database_properties_dict["DATABASE_LABEL"]["value"] = db_label
-                vector_database_properties_dict[db_label] = copy.deepcopy(single_vector_database_properties_dict)
+                    single_vector_database_properties_dict["DATABASE_LABEL"]["value"] = db_label
+                    vector_database_properties_dict[db_label] = copy.deepcopy(single_vector_database_properties_dict)
 
             return vector_database_properties_dict
 
@@ -304,9 +361,24 @@ class Property:
             for key in self._content_assistant_properties.keys():
                 content_assistant_properties_dict[key] = copy.deepcopy(self._content_assistant_properties[key])
 
-            content_assistant_watsonx_property_dict = {}
-            for key in self._content_assistant_watsonx_properties.keys():
-                content_assistant_watsonx_property_dict[key] = copy.deepcopy(self._content_assistant_watsonx_properties[key])
+            # Select the appropriate AI provider property file based on provider type
+            if self._gather.ai_provider_type == "WATSONX_LIGHTWEIGHT":
+                content_assistant_watsonx_property_dict = {}
+                for key in self._content_assistant_watsonx_lightweight_properties.keys():
+                    content_assistant_watsonx_property_dict[key] = copy.deepcopy(self._content_assistant_watsonx_lightweight_properties[key])
+                
+                # Add SSL folder for lightweight providers
+                for i in range(self._gather.ai_provider_number):
+                    if i == 0:
+                        ssl_folder_name = "ai-provider"
+                    else:
+                        ssl_folder_name = f"ai-provider{i + 1}"
+                    self._gather.ssl_directory_list.append(ssl_folder_name)
+            else:
+                # Default to WATSONX_SAAS
+                content_assistant_watsonx_property_dict = {}
+                for key in self._content_assistant_watsonx_properties.keys():
+                    content_assistant_watsonx_property_dict[key] = copy.deepcopy(self._content_assistant_watsonx_properties[key])
 
             for i in range(self._gather.ai_provider_number):
                 if i == 0:
@@ -320,6 +392,57 @@ class Property:
         except Exception as e:
             self._logger.exception(
                 "Exception from gather script in populate_content_assistant_details function -  {}".format(str(e)))
+
+    def populate_opensearch_details(self):
+        """
+        Populate OpenSearch cluster configuration details
+        """
+        try:
+            opensearch_section = {}
+            for key in self._opensearch_properties.keys():
+                opensearch_section[key] = copy.deepcopy(self._opensearch_properties[key])
+            
+            # Set values from gather object (all None since details are filled in property file)
+            opensearch_section['STORAGE_CLASS']['value'] = self._gather.opensearch_storage_class or "ocs-storagecluster-cephfs"
+            opensearch_section['BLOCK_STORAGE_CLASS']['value'] = self._gather.opensearch_block_storage_class or "ocs-storagecluster-ceph-rbd"
+            opensearch_section['CLUSTER_HOSTNAME']['value'] = self._gather.opensearch_cluster_hostname or "<Required>"
+            opensearch_section['ADMIN_PASSWORD']['value'] = self._gather.opensearch_admin_password or "<Required>"
+            opensearch_section['GENAI_PASSWORD']['value'] = self._gather.opensearch_genai_password or "<Required>"
+            
+            # Return nested under OPENSEARCH key to match table structure
+            return {'OPENSEARCH': opensearch_section}
+        
+        except Exception as e:
+            self._logger.exception(
+                "Exception from property script in populate_opensearch_details function - {}".format(str(e)))
+
+    def create_opensearch_propertyfile(self, opensearch_properties):
+        """
+        Create OpenSearch property file
+        """
+        try:
+            opensearch_doc = document()
+            opensearch_doc.add(comment("####################################################"))
+            opensearch_doc.add(comment("##        OpenSearch Cluster Properties           ##"))
+            opensearch_doc.add(comment("####################################################"))
+            opensearch_doc.add(nl())
+            
+            # Create a table section for OpenSearch properties
+            opensearch_section = table()
+            for key, value in opensearch_properties['OPENSEARCH'].items():
+                self.__write_property_table(section=opensearch_section,
+                                           key=key,
+                                           value=value['value'],
+                                           note=value['comment'])
+            
+            opensearch_doc.add("OPENSEARCH", opensearch_section)
+            
+            f = TOMLFile(os.path.join(self._property_folder, 'cas_opensearch.toml'))
+            f.write(opensearch_doc)
+            
+        except Exception as e:
+            self._logger.exception(
+                "Exception from property script in create_opensearch_propertyfile function - {}".format(str(e)))
 
     def create_idp_propertyfile(self, idp_properties_list):
         try:

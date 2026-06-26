@@ -1,3 +1,15 @@
+## 3.0.0 (2026-06-26)
+
+### Feature 
+
+- added support for WatsonX Light Weight Engine 
+- added support for CP4BA OpenSearch integration
+- added support for WatsonX validation using ibm_watsonx_ai package
+
+### Chore
+
+- update to python libraries
+
 ## 2.0.1 (2026-02-20)
 
 ### Fix
