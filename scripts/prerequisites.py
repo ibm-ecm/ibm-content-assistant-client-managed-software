@@ -579,8 +579,8 @@ def generate_opensearch_yamls(namespace, deployment_properties, storage_properti
                     content = content.replace("snapshotPVCStorageClass: REPLACE_STORAGECLASS",
                                             f"snapshotPVCStorageClass: {slow_file_storage_class}")
                     # Replace data and deployment storageClass with BLOCK_STORAGE_CLASS
-                    content = content.replace("storageClass: REPLACE_STORAGECLASS",
-                                            f"storageClass: {block_storage_class}")
+                    content = content.replace("REPLACE_BLOCK_STORAGECLASS",
+                                            block_storage_class)
                 else:
                     # For other files, use the default replacement
                     content = content.replace("REPLACE_STORAGECLASS", slow_file_storage_class)
