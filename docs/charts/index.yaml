@@ -8,7 +8,7 @@ entries:
       charts.openshift.io/supportURL: https://github.com/ibm-ecm/ibm-content-assistant-client-managed-software
     apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-09-28T20:27:20.243492-04:00"
+    created: "2026-09-29T10:04:25.051047-07:00"
     description: Kubernetes operator for deploying and managing IBM Content Assistant
       (CAS) - an AI-powered content assistant platform built on IBM FileNet Content
       Manager, providing GenAI connectors, vector database integration, and enterprise-grade
@@ -32,7 +32,7 @@ entries:
     - https://github.com/ibm-ecm/ibm-content-assistant-client-managed-software
     type: application
     urls:
-    - https://raw.github.ibm.com/dba/cert-kubernetes-content-assistant/gh-pages/docs/charts/ibm-content-assistant-operator-1.4.0.tgz
+    - https://ibm-ecm.github.io/ibm-content-assistant-client-managed-software/charts/ibm-content-assistant-operator-1.4.0.tgz
     version: 1.4.0
   ibm-usage-metering:
   - annotations:
@@ -44,7 +44,7 @@ entries:
       charts.openshift.io/sources: https://github.ibm.com/cloud-license-reporter/ibm-usage-metering-operator
     apiVersion: v2
     appVersion: 1.0.7
-    created: "2026-09-28T20:27:20.243896-04:00"
+    created: "2026-09-29T10:04:25.051684-07:00"
     description: 'A Helm chart for IBM Usage Metering installation. IBM products can
       integrate with Usage Metering Service (UMS) that is used to capture two types
       of product usage metrics: contractual metrics for compliance purposes, and adoption
@@ -125,6 +125,6 @@ entries:
     - https://github.ibm.com/cloud-license-reporter/ibm-usage-metering-operator
     type: application
     urls:
-    - https://raw.github.ibm.com/dba/cert-kubernetes-content-assistant/gh-pages/docs/charts/ibm-usage-metering-1.0.7.tgz
+    - https://ibm-ecm.github.io/ibm-content-assistant-client-managed-software/charts/ibm-usage-metering-1.0.7.tgz
     version: 1.0.7
-generated: "2026-09-28T20:27:20.239329-04:00"
+generated: "2026-09-29T10:04:25.044975-07:00"
