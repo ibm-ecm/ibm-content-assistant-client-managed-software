@@ -111,6 +111,20 @@ class SilentGatherOptions(GatherOptions):
             self.error_check()
         self._accept_license = license_accept
 
+        # LICENSE_TYPE: "Essentials", "Premium", or "CP4BA". Defaults to "Essentials" if absent.
+        license_type = self._envfile.get("LICENSE_TYPE", "Essentials")
+        _valid = ("Essentials", "Premium", "CP4BA")
+        if license_type not in _valid:
+            self._error_list.append(
+                f"ERROR with LICENSE_TYPE in silent mode configuration {self._envfile_path} file - "
+                f"Must be one of 'Essentials', 'Premium', or 'CP4BA', got {license_type!r}")
+            self.error_check()
+        self._license_model = license_type
+        # Derive the CR-level license value used by upgrade_deployment:
+        #   "fncm" for Essentials/Premium, "cp4ba" for CP4BA
+        self._selected_license = "cp4ba" if license_type.upper() == "CP4BA" else "fncm"
+        self._logger.info(f"License model set from silent config: {self._license_model!r} → CR value: {self._selected_license!r}")
+
     def silent_collect_sensitive_info(self):
         collected_sensitive = gather_var(key="COLLECT_SENSITIVE_DATA", _logger=self._logger, _envfile=self._envfile, _error_list=self._error_list)
         super().collect_sensitive_data(collected_sensitive)
@@ -124,28 +138,32 @@ class SilentGatherOptions(GatherOptions):
             super().components.add("genai_connector")
 
     def silent_parse_upgrade_variables(self):
-        self.silent_license_model()
-        self.silent_platform()
+        """Parse the three keys from silent_install_upgradedeployment.toml.
+
+        Reads LICENSE_TYPE, NAMESPACE, and APPLY_CR.  Platform and registry
+        settings are not relevant for a deployment upgrade (the operator and
+        images are already present on the cluster).
+        """
+        # LICENSE_TYPE → derive the CR-level value ("fncm" or "cp4ba")
+        license_type = self._envfile.get("LICENSE_TYPE", "Essentials")
+        _valid = ("Essentials", "Premium", "CP4BA")
+        if license_type not in _valid:
+            self._error_list.append(
+                f"ERROR with LICENSE_TYPE in silent mode configuration "
+                f"{self._envfile_path} file - "
+                f"Must be one of 'Essentials', 'Premium', or 'CP4BA', got {license_type!r}")
+            self.error_check()
+        self._license_model = license_type
+        self._selected_license = "cp4ba" if license_type.upper() == "CP4BA" else "fncm"
+        self._logger.info(
+            f"License type set from silent config: {self._license_model!r} "
+            f"→ CR value: {self._selected_license!r}")
+
+        # NAMESPACE
         self.silent_namespace()
 
-        private_catalog = not (self._envfile.get("GLOBAL_CATALOG", False))
-        private_registry = self._envfile.get("PRIVATE_REGISTRY", False)
-        apply_cr = self._envfile.get("APPLY_CR", False)
-
-        self._private_catalog = private_catalog
-        self._apply_cr = apply_cr
-        self._private_registry = private_registry
-
-        if self._platform == "other":
-            if private_registry:
-                self.silent_parse_private_registry_info()
-
-                if self._error_list:
-                    self.error_check()
-                else:
-                    self.collect_verify_private_registry()
-            else:
-                self.error_check()
+        # APPLY_CR (default True — upgrade always applies the CR unless explicitly disabled)
+        self._apply_cr = self._envfile.get("APPLY_CR", True)
 
     # Function to parse private registry info from silent install file
     def silent_parse_private_registry_info(self):
@@ -175,7 +193,7 @@ class SilentGatherOptions(GatherOptions):
             self._private_registry_port = private_reg_parts.port
 
         if private_reg_parts.path != "":
-            self._private_registry_path = private_reg_parts.path.lstrip('/')
+            self._private_registry_path = private_reg_parts.path.strip('/')
 
         self._private_registry_username = self._envfile.get("PRIVATE_REGISTRY_USERNAME")
         self._private_registry_password = self._envfile.get("PRIVATE_REGISTRY_PASSWORD")
@@ -200,47 +218,52 @@ class SilentGatherOptions(GatherOptions):
 
 
     # method to parse load images silent install file
-    def silent_parse_load_images_file(self, airgap=False):
+    def silent_parse_load_images_file(self, airgap=False, verify=True):
+        # Images are always pulled from IBM ICR — read entitlement key.
         self._entitlement_key = self._envfile.get("ENTITLEMENT_KEY")
-        if self._entitlement_key == "" or self._entitlement_key is None:
+        if not self._entitlement_key:
             self._error_list.append(
                 f"ERROR with ENTITLEMENT KEY in silent mode configuration {self._envfile_path} file - Field Cannot be Empty")
+            self.error_check()
+            return
 
+        # Destination registry is always required.
         self.silent_parse_private_registry_info()
 
         if airgap:
             self._all_channels = gather_var(key="MIRROR_ALL_CHANNELS", valid_values=[True, False], _logger=self._logger, _envfile=self._envfile,
                                             _error_list=self._error_list)
 
+        if self._error_list:
+            self.error_check()
+            return
 
-        self.error_check()
+        # Verify both source and destination credentials only when needed
+        # (skipped for 'generate' which only reads local files).
+        if verify:
+            self.collect_verify_entitlement_key()
+            self.collect_verify_private_registry()
 
 
-    def silent_parse_deploy_operator_file(self, validate=True):
-        self.silent_license_model()
-        self.silent_platform()
+    def silent_parse_deploy_operator_file(self, validate=True, version_data=None):
+        self.silent_license_model(version_data)
         self._entitlement_key = self._envfile.get("ENTITLEMENT_KEY")
         private_registry = self._envfile.get("PRIVATE_REGISTRY", False)
         self._private_registry = private_registry
 
-        if self._platform == "other":
-            if private_registry:
-                self.silent_parse_private_registry_info()
+        if private_registry:
+            self.silent_parse_private_registry_info()
 
-                if self._error_list:
-                    self.error_check()
-                else:
-                    self.collect_verify_private_registry()
+            if self._error_list:
+                self.error_check()
             else:
-                if self._entitlement_key == "" or self._entitlement_key is None:
-                    self._error_list.append(
-                        f"ERROR with ENTITLEMENT KEY in silent mode configuration {self._envfile_path} file -  Field Cannot be Empty if a private registry is not used")
-                    self.error_check()
-                else:
-                    if validate:
-                        self.collect_verify_entitlement_key()
+                self.collect_verify_private_registry()
         else:
-            if validate:
+            if self._entitlement_key == "" or self._entitlement_key is None:
+                self._error_list.append(
+                    f"ERROR with ENTITLEMENT KEY in silent mode configuration {self._envfile_path} file -  Field Cannot be Empty if a private registry is not used")
+                self.error_check()
+            elif validate:
                 self.collect_verify_entitlement_key()
         self.silent_namespace()
         self._private_catalog = not (self._envfile.get("GLOBAL_CATALOG", False))
@@ -257,6 +280,10 @@ class SilentGatherOptions(GatherOptions):
             "podman present": super()._podman_available,
             "Cluster connection": super()._ocp_logged_in
         }
+
+    @property
+    def cleanup_usage_metering(self):
+        return self._envfile.get("CLEANUP_USAGE_METERING", False)
 
     def error_check(self):
         if len(self._error_list) > 0:

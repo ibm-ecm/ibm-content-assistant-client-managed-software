@@ -23,14 +23,11 @@
 # License Acceptance - Valid values: [true; false]
 LICENSE_ACCEPT = false
 
-# ####################################################
-# ##                   Platform                     ##
-# ####################################################
-
-# Platform of choice - Valid values: [1; 2]
-# 1. OCP
-# 2. CNCF
-PLATFORM = 1
+# License type - Valid values: ["Essentials"; "Premium"; "CP4BA"]
+#   Essentials — IBM Content Cortex Essentials license (Usage Metering only)
+#   Premium    — IBM Content Cortex Premium license    (Usage Metering only)
+#   CP4BA      — Cloud Pak for Business Automation     (License Service + Usage Metering)
+LICENSE_TYPE = "Essentials"
 
 # ####################################################
 # ##                  Namespace                     ##
@@ -72,12 +69,3 @@ PRIVATE_REGISTRY_SSL_ENABLED = true
 # Cerificates needs to in PEM format
 # Disable certificate verification by using the --tls-verify=false flag
 PRIVATE_REGISTRY_SSL_CRT_PATH = "/path/to/my/certificate.crt"
-
-# ####################################################
-# ##            Cluster Configuration               ##
-# ####################################################
-
-# The IBM Content Assistant Operator Catalog Source can be installed with the follow options
-#   Private Catalog - Install the catalog in the same target namespace
-#   Global Catalog - Install the catalog in the openshift-marketplace namespace
-GLOBAL_CATALOG = false

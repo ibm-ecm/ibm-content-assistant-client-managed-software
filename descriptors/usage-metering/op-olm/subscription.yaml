@@ -2,19 +2,20 @@
 #
 # Licensed Materials - Property of IBM
 #
-# (C) Copyright IBM Corp. 2023. All Rights Reserved.
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
 #
 # US Government Users Restricted Rights - Use, duplication or
 # disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
 #
 ###############################################################################
 apiVersion: operators.coreos.com/v1alpha1
-kind: CatalogSource
+kind: Subscription
 metadata:
-  name: ibm-content-assistant-operator-catalog
-  namespace: openshift-marketplace
+  name: ibm-usage-metering-operator-catalog-subscription
+  namespace: REPLACE_NAMESPACE
 spec:
-  displayName: ibm-content-assistant-operator
-  publisher: IBM
-  sourceType: grpc
-  image: icr.io/cpopen/ibm-content-assistant-catalog@sha256:5bf8e9fb9b697e9e06902d5eb8a04aba882793bfc2e13dc188ee7f2e37babde0
+  channel: v1.0
+  installPlanApproval: Automatic
+  name: ibm-usage-metering-operator
+  source: ibm-usage-metering-operator-catalog
+  sourceNamespace: REPLACE_NAMESPACE

@@ -16,7 +16,7 @@ metadata:
     app.kubernetes.io/instance: ibm-cas
     app.kubernetes.io/managed-by: ibm-cas
     app.kubernetes.io/name: ibm-cas
-    release: 1.0.3
+    release: 1.0.4
 spec:
   ## The version of the Content Assistant operator that is being used.
   appVersion: 1.0.0
@@ -32,6 +32,7 @@ spec:
     ## Choose the licensing model for the Content Assistant components.
     ## Valid values are:
     ## "fncm" for IBM FileNet Content Manager,
+    ## "cp4ba" for IBM Cloud Pak for Business Automation.
     sc_cas_license_type: "fncm"
 
     ## All Content Assistant components must use/share the image_pull_secrets to pull images.
@@ -128,6 +129,15 @@ spec:
     ## Please refer to the Content Assistant documentation for more information about how to retrieve and apply the sample network policy templates.
     sc_generate_sample_network_policies: false
 
+    # UsageMeteringConfiguration holds optional tuning knobs for the GenAI usage-metering CronJob.
+    # The CronJob is always created unless Enabled is explicitly set to false. 
+    usage_metering: 
+      # Set to false to skip creating the usage-metering
+      enabled: true
+      # Cron schedule for the usage-metering job 
+      # (default: "30 10 * * *").
+      schedule: "30 10 * * *"
+    
     sc_egress_configuration:
       ## Optional.  Kubernetes API server namespace(s) (comma separated) to be used for egress network policy when `sc_restricted_internet_access: true` and `sc_deployment_platform: "other"`.
       ## "{}" can also be used as a value.  It is equivalent to all namespaces (eg: namespaceSelector:{})
@@ -231,7 +241,7 @@ spec:
     image:
       ## The default repository is the IBM Entitled Registry.
       repository: cp.icr.io/cp/cas/genaiconnector
-      tag: "1.0.3"
+      tag: "1.0.4"
 
       ## This will override the image pull policy in the shared_configuration.
       pull_policy: IfNotPresent

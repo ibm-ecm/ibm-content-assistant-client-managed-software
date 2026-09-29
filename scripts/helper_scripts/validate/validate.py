@@ -1628,6 +1628,44 @@ class Validate:
             if os.path.exists(folder_path):
                 self.auto_apply_all_secrets_in_folder(folder_path=folder_path)
 
+    def auto_apply_configmaps(self):
+        """Apply all ConfigMap YAML files from generatedFiles/<namespace>/configmaps/."""
+        generated_folder = os.path.join(os.getcwd(), "generatedFiles", self._namespace)
+        configmaps_folder = os.path.join(generated_folder, "configmaps")
+        if not os.path.exists(configmaps_folder):
+            self._logger.info("No configmaps folder found, skipping configmap apply")
+            return
+        yaml_ext = [".yaml", ".yml"]
+        files = self.__files_in_dir(configmaps_folder, yaml_ext)
+        for f in files:
+            self._logger.info(f"Applying configmap from file: {f}")
+            applied = self._kube.apply_cluster_resource_files(
+                "configmap", os.path.join(configmaps_folder, f), namespace=self._namespace
+            )
+            if applied:
+                print(Panel.fit(Text(f"ConfigMap Applied: {f}", style="bold cyan")))
+            else:
+                print(Panel.fit(Text(f"Failed to apply configmap: {f}", style="bold red")))
+
+    def auto_apply_metrics(self):
+        """Apply all metrics YAML files from generatedFiles/<namespace>/metrics/."""
+        generated_folder = os.path.join(os.getcwd(), "generatedFiles", self._namespace)
+        metrics_folder = os.path.join(generated_folder, "metrics")
+        if not os.path.exists(metrics_folder):
+            self._logger.info("No metrics folder found, skipping metrics apply")
+            return
+        yaml_ext = [".yaml", ".yml"]
+        files = self.__files_in_dir(metrics_folder, yaml_ext)
+        for f in files:
+            self._logger.info(f"Applying metrics from file: {f}")
+            applied = self._kube.apply_cluster_resource_files(
+                "metrics", os.path.join(metrics_folder, f), namespace=self._namespace
+            )
+            if applied:
+                print(Panel.fit(Text(f"Metrics Applied: {f}", style="bold cyan")))
+            else:
+                print(Panel.fit(Text(f"Failed to apply metrics: {f}", style="bold red")))
+
     def auto_apply_cr(self):
         generated_folder = os.path.join(os.getcwd(), "generatedFiles", self._namespace)
         applied = self._kube.apply_cluster_resource_files("custom resource", os.path.join(generated_folder, "ibm_content_assistant_cr.yaml"), namespace=self._namespace)

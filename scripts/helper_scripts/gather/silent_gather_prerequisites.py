@@ -64,6 +64,16 @@ class SilentGatherPrereqOptions(GatherPrereqOptions):
         if version:
             self._cas_version = version
 
+    def silent_fips_support(self):
+        fips_support = self._envfile.get("FIPS_SUPPORT", False)
+        if isinstance(fips_support, bool):
+            self._fips_support = fips_support
+        else:
+            self._error_list.append(
+                f"Incorrect/missing parameter set in silent install file - "
+                f"FIPS_SUPPORT={fips_support} | Valid values - [true,false]")
+            self._fips_support = False
+
     def silent_network_policies_support(self):
         np_support = gather_var(key="GENERATE_NETWORK_POLICIES", _logger=self._logger, _envfile=self._envfile,
                                     _error_list=self._error_list)
@@ -119,7 +129,7 @@ class SilentGatherPrereqOptions(GatherPrereqOptions):
         """
         Read AI Provider type from silent config file
         """
-        provider_type = gather_var(key="AI_PROVIDER_TYPE", valid_values=[1, 2], _logger=self._logger,
+        provider_type = gather_var(key="AI_PROVIDER_TYPE", valid_values=[1, 2, 3], _logger=self._logger,
                                 _envfile=self._envfile, _error_list=self._error_list)
         if provider_type is not None:
             self._ai_provider_type = self.AIProviderType(provider_type).name
@@ -127,12 +137,22 @@ class SilentGatherPrereqOptions(GatherPrereqOptions):
             # Default to WATSONX_SAAS if not specified
             self._ai_provider_type = "WATSONX_SAAS"
 
+    def silent_model_gateway_details(self):
+        """
+        Read ModelGateway details from silent config file.
+        Used when AI_PROVIDER_TYPE = 3 (MODEL_GATEWAY).
+        """
+        # Read SSL flag (optional, defaults to False)
+        ssl_enabled = self._envfile.get("MODELGATEWAY_SSL_ENABLED", False)
+        self._model_gateway_ssl_enabled = bool(ssl_enabled)
+
     def silent_license_model(self):
-        license_model = gather_var(key="LICENSE", valid_values=["FNCM", "CP4BA"], _logger=self._logger,
+        license_model = gather_var(key="LICENSE", valid_values=["Essentials", "Premium", "CP4BA"],
+                                   _logger=self._logger,
                                    _envfile=self._envfile, _error_list=self._error_list)
         if license_model is not None:
             self._license_model = license_model
-            
+
             # If CP4BA license, check for OpenSearch cluster configuration
             if license_model.upper() == "CP4BA":
                 self.silent_opensearch_cluster()

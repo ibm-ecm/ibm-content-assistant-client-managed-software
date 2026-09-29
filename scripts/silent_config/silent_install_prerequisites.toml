@@ -30,8 +30,11 @@ NAMESPACE = "<Namespace>"
 # ##              License and Platform              ##
 # ####################################################
 
-# Choose the licensing model for the Product you are installing - Valid values: ['FNCM', "CP4BA"]
-LICENSE = "FNCM"
+# Choose the licensing model for the Product you are installing - Valid values: ["Essentials", "Premium", "CP4BA"]
+#   Essentials — IBM Content Cortex Essentials license (Usage Metering only)
+#   Premium    — IBM Content Cortex Premium license    (Usage Metering only)
+#   CP4BA      — Cloud Pak for Business Automation     (License Service + Usage Metering)
+LICENSE = "Essentials"
 
 # ####################################################
 # ##          OpenSearch Cluster Configuration      ##
@@ -50,6 +53,9 @@ PLATFORM = 1
 # This value will be ignored for platforms other than 'CNCF'
 INGRESS = false
 
+# Do you want to enable FIPS compliance mode - Valid values: [true; false]
+FIPS_SUPPORT = false
+
 # Do you want the operator to generate network policies templates for the deployment - Valid values: [true; false]
 GENERATE_NETWORK_POLICIES = false
 
@@ -60,10 +66,15 @@ GENERATE_NETWORK_POLICIES = false
 # Number of AI providers to be used - Valid values: [1]
 AI_PROVIDER_COUNT = 1
 
-# AI Provider Type - Valid values: [1; 2]
+# AI Provider Type - Valid values: [1; 2; 3]
 # 1. WatsonX SaaS (requires API Key, Space ID, and URL)
 # 2. WatsonX Lightweight (requires API Key, Username, and URL)
+# 3. Model Gateway (requires tenant names and shared gateway URL)
 AI_PROVIDER_TYPE = 1
+
+# ModelGateway configuration (only used when AI_PROVIDER_TYPE = 3)
+# MODELGATEWAY_TENANTS = ["TENANT1", "TENANT2"]
+# MODELGATEWAY_SSL_ENABLED = false
 
 # ####################################################
 # ##           Vector Database Properties           ##

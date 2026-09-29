@@ -1,0 +1,42 @@
+################################################################################
+#
+# Licensed Materials - Property of IBM
+#
+# (C) Copyright IBM Corp. 2026. All Rights Reserved.
+#
+# US Government Users Restricted Rights - Use, duplication or
+# disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+###############################################################################
+apiVersion: operator.ibm.com/v1
+kind: IBMServiceMeterDefinition
+metadata:
+  name: ica-genai-metrics
+  namespace: REPLACE_NAMESPACE
+spec:
+  mappingId: cacmdeployment000000000001
+  processing: LAST
+  repeat: true
+  breakdownDefs:
+    - breakdownBy:
+        name: AUTHORIZED_USER
+      groupBy:
+        - version
+        - environment
+        - architecture
+        - platform
+        - indexing
+        - indexedDocs
+        - indexedChunks
+        - textQuery
+        - ragQuery
+        - compare
+        - summary
+      source: metricQuantity
+      processing: LAST
+  data:
+    productId: a516ed219c22455093447670c3896299
+    productName: IBM Content Assistant Client Managed Software
+    metricName: AUTHORIZED_USER
+    metricDescription: count of GenAI instances
+    metricType: CONTRACTUAL

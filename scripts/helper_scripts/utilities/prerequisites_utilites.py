@@ -13,6 +13,7 @@ import binascii
 import inspect
 import json
 import os
+from pathlib import Path
 import platform
 import re
 import secrets
@@ -21,16 +22,20 @@ import socket
 import ssl
 import struct
 import subprocess
-import time
+import warnings
 
+import time
 import yaml
 # from OpenSSL import SSL
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
+from cryptography.utils import CryptographyDeprecationWarning
 from rich import print
 from rich.panel import Panel
 from rich.text import Text
+
+warnings.filterwarnings("ignore", category=CryptographyDeprecationWarning)
 
 _CIPHERS = bytes(
     "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256",
@@ -50,11 +55,36 @@ def zip_folder(zip_file_name: str, folder_path: str) -> str:
     zip_file = shutil.make_archive(zip_file_name, "zip", folder_path, )
     return zip_file
 
+def collect_visible_folders(directory_path='.'):
+    """
+    Returns a list of visible (non-hidden) folders using pathlib.
+
+    Filters based on Unix-style dot-files. For Windows attributes, 
+    additional checks (not shown here for simplicity) may be needed.
+    """
+    p = Path(directory_path)
+    # Use list comprehension to iterate through items and filter out dot-files
+    visible_folders = [item for item in p.iterdir() if item.is_dir() and not item.name.startswith('.')]
+    # Return the list of visible folders names
+    return [item.name for item in visible_folders]
+
+def collect_visible_files(directory_path='.'):
+    """
+    Returns a list of visible (non-hidden) files using pathlib.
+    Filters based on Unix-style dot-files. For Windows attributes,  
+    additional checks (not shown here for simplicity) may be needed.
+    """
+    p = Path(directory_path)
+    # Use list comprehension to iterate through items and filter out dot-files
+    visible_files = [item for item in p.iterdir() if item.is_file() and not item.name.startswith('.')]
+    # Return the list of visible files names
+    return [item.name for item in visible_files]
+
 
 # Adding idp certificate to trusted certificates folder
 def add_idp_to_trusted_certs(ssl_cert_folder, trusted_certs_folder):
     if os.path.exists(ssl_cert_folder):
-        ssl_folders = collect_visible_files(ssl_cert_folder)
+        ssl_folders = collect_visible_folders(ssl_cert_folder)
 
         # remove any hidden files that might be picked up and remove the trusted-certs folder
         for folder in ssl_folders:
@@ -76,16 +106,43 @@ def add_idp_to_trusted_certs(ssl_cert_folder, trusted_certs_folder):
 
 
 # Create a method to create the generatedfiles folder structure and zip it up if it is present
-def create_generate_folder(trusted_certs_present, namespace='') -> None:
+def create_generate_folder(trusted_certs_present, namespace='', create_metrics=True, vault_enabled=False) -> None:
+    """
+    Create the generated files folder structure.
+    
+    Args:
+        trusted_certs_present: Whether to create trusted certs folder
+        namespace: Namespace for the deployment
+        create_metrics: Whether to create metrics folder (default True, set False for AI Services only)
+        vault_enabled: Whether vault is enabled (if True, skip secrets/ and ssl/ folders)
+    """
     generate_folder = os.path.join(os.getcwd(), "generatedFiles", namespace)
-    generate_secrets_folder = os.path.join(generate_folder, "secrets")
-    generate_ssl_secrets_folder = os.path.join(generate_folder, "ssl")
-    generate_trusted_secrets_folder = os.path.join(generate_folder, "ssl", "trusted-certs")
+    generate_metrics_folder = os.path.join(generate_folder, "metrics")
+    generate_vault_folder = os.path.join(generate_folder, "vault")
+    generate_vault_json_folder = os.path.join(generate_vault_folder, "json-data")
+    generate_vault_spc_folder = os.path.join(generate_vault_folder, "secret-provider-classes")
+    
+    # Always create base folder
     os.makedirs(generate_folder)
-    os.makedirs(generate_secrets_folder)
-    os.makedirs(generate_ssl_secrets_folder)
-    if trusted_certs_present:
-        os.makedirs(generate_trusted_secrets_folder)
+    
+    # Create vault folders if vault is enabled
+    if vault_enabled:
+        os.makedirs(generate_vault_folder)
+        os.makedirs(generate_vault_json_folder)
+        os.makedirs(generate_vault_spc_folder)
+    else:
+        # Create K8s secret folders only when vault is NOT enabled
+        generate_secrets_folder = os.path.join(generate_folder, "secrets")
+        generate_ssl_secrets_folder = os.path.join(generate_folder, "ssl")
+        generate_trusted_secrets_folder = os.path.join(generate_folder, "ssl", "trusted-certs")
+        os.makedirs(generate_secrets_folder)
+        os.makedirs(generate_ssl_secrets_folder)
+        if trusted_certs_present:
+            os.makedirs(generate_trusted_secrets_folder)
+    
+    # Create metrics folder if requested (independent of vault)
+    if create_metrics:
+        os.makedirs(generate_metrics_folder)
 
 def parse_required_fields(required_fields):
     parsed_fields = {}
@@ -101,6 +158,7 @@ def parse_required_fields(required_fields):
 
 # Function to check if private key is of pem format
 def check_pem_key_format(ssl_cert,passkey=None):
+    data = None
     try:
         with open(ssl_cert, 'rb') as file:
             data = file.read()
@@ -108,17 +166,21 @@ def check_pem_key_format(ssl_cert,passkey=None):
         if passkey:
             serialization.load_pem_private_key(data, password=passkey.encode("utf-8"), backend=default_backend())
         else:
-            serialization.load_pem_public_key(data, backend=default_backend())
+            serialization.load_pem_private_key(data, password=None, backend=default_backend())
         # If successful, it's a valid PEM file
         return True
-    except Exception as e:
-        try:
-            # Attempt to load it as a public key
-            serialization.load_pem_public_key(data, backend=default_backend())
-            # If successful, it's a valid PEM file
-            return True
-        except Exception:
-            # Not a valid PEM file
+    except Exception:
+        if data is not None:
+            try:
+                # Attempt to load it as a public key
+                serialization.load_pem_public_key(data, backend=default_backend())
+                # If successful, it's a valid PEM file
+                return True
+            except Exception:
+                # Not a valid PEM file
+                return False
+        else:
+            # File could not be read
             return False
 
 
@@ -130,38 +192,44 @@ def check_pem_cert_format(ssl_cert):
         x509.load_pem_x509_certificate(data, default_backend())
         return True
     except Exception as e:
-        print(e)
         return False
 
 
 # Function to check all cert formats recursively for postgres SSL
-def check_private_key(folder, cert_name,passkey):
-    pem_cert_check = check_pem_cert_format(os.path.join(folder, cert_name))
-    if not pem_cert_check:
-        pem_key_check = check_pem_key_format(os.path.join(folder, cert_name),passkey=passkey)
-        if not pem_key_check:
-            return False
+def check_ssl_certs_postgres(folder_list, cert_path):
+    for cert in folder_list:
+        if cert.startswith("."):
+            os.remove(os.path.join(cert_path, cert))
         else:
-            return True
-    else:
-        return True
+            pem_cert_check = check_pem_cert_format(os.path.join(cert_path, cert))
+            if not pem_cert_check:
+                pem_key_check = check_pem_key_format(os.path.join(cert_path, cert))
+                if not pem_key_check:
+                    return False
+                else:
+                    return True
+            else:
+                return True
 
+def check_specific_ssl_folder(cert_folder, cert_id, missing_cert, incorrect_cert, vector_db_folder=False):
+    """Check a single SSL certificate folder for presence and validity of cert files.
 
-def check_specific_ssl_folder(cert_folder,cert_id,missing_cert,incorrect_cert,vector_db_folder=False):
+    Used by check_ssl_folders_cas for Content Assistant SSL validation.
 
+    Args:
+        cert_folder:    Absolute path to the certificate folder.
+        cert_id:        Key name to record issues under in missing_cert / incorrect_cert.
+        missing_cert:   Dict accumulating missing certificate entries (mutated in place).
+        incorrect_cert: Dict accumulating malformed certificate entries (mutated in place).
+        vector_db_folder: Unused (kept for API compatibility with scripts1 version).
+    """
     if not os.path.exists(cert_folder):
-        if cert_id not in missing_cert:
-            missing_cert[cert_id] = []
-            missing_cert[cert_id].append("certificate")
-        else:
-            missing_cert[cert_id].append("certificate")
+        missing_cert.setdefault(cert_id, []).append("certificate")
+        return
+
     ssl_certs = collect_visible_files(cert_folder)
     if not ssl_certs:
-        if cert_id not in missing_cert:
-            missing_cert[cert_id] = []
-            missing_cert[cert_id].append("certificate")
-        else:
-            missing_cert[cert_id].append("certificate")
+        missing_cert.setdefault(cert_id, []).append("certificate")
     else:
         for cert in ssl_certs:
             if cert.startswith("."):
@@ -173,85 +241,417 @@ def check_specific_ssl_folder(cert_folder,cert_id,missing_cert,incorrect_cert,ve
                     if not pem_key_check:
                         incorrect_cert[cert_id] = ["certificate"]
 
+
+def validate_opensearch_password(password: str) -> tuple:
+    """Validate that a password meets OpenSearch security requirements.
+
+    OpenSearch requires passwords to be at least 8 characters with uppercase,
+    lowercase, digit, and a shell-safe / URL-safe special character.
+
+    Args:
+        password: Plain-text password to validate.
+
+    Returns:
+        (is_valid, error_message) — error_message is empty when is_valid is True.
+    """
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    if not any(c.isupper() for c in password):
+        return False, "Password must contain at least one uppercase letter"
+    if not any(c.islower() for c in password):
+        return False, "Password must contain at least one lowercase letter"
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least one digit"
+    special_chars = "!@#$%^&*()_+-=."
+    if not any(c in special_chars for c in password):
+        return False, "Password must contain at least one special character (!@#$%^&*()_+-=.)"
+    return True, ""
+
+
+def check_ssl_folders_cas(
+        content_assistant_prop=None,
+        vector_database_prop=None,
+        ssl_cert_folder=None,
+) -> tuple:
+    """Check SSL certificate folders for Content Assistant deployments.
+
+    This is the CAS-specific variant of check_ssl_folders that understands
+    the content_assistant_prop / vector_database_prop property dictionaries
+    produced by ReadPropContentAssistant and ReadPropVectorDatabase.
+
+    Args:
+        content_assistant_prop: Dict from ReadPropContentAssistant.to_dict().
+        vector_database_prop:   Dict from ReadPropVectorDatabase.to_dict().
+        ssl_cert_folder:        Path to the ssl-certs folder for the namespace.
+
+    Returns:
+        (missing_cert, incorrect_cert) — dicts keyed by cert-folder ID.
+    """
+    missing_cert: dict = {}
+    incorrect_cert: dict = {}
+
+    if not ssl_cert_folder or not os.path.exists(ssl_cert_folder):
+        return missing_cert, incorrect_cert
+
+    # Check AI provider SSL certificates for lightweight providers
+    if content_assistant_prop and "_ai_providers_ids" in content_assistant_prop:
+        for ai_provider_id in content_assistant_prop["_ai_providers_ids"]:
+            if content_assistant_prop[ai_provider_id].get("SSL_ENABLED", False):
+                provider_number = content_assistant_prop["_ai_providers_ids"].index(ai_provider_id) + 1
+                cert_id = "ai-provider" if provider_number == 1 else f"ai-provider{provider_number}"
+                ai_provider_folder = os.path.join(ssl_cert_folder, cert_id)
+                check_specific_ssl_folder(
+                    cert_folder=ai_provider_folder,
+                    cert_id=cert_id,
+                    missing_cert=missing_cert,
+                    incorrect_cert=incorrect_cert,
+                )
+
+    # Check ModelGateway SSL certificate folder
+    if content_assistant_prop and "MODELGATEWAY" in content_assistant_prop:
+        if content_assistant_prop["MODELGATEWAY"].get("SSL_ENABLED", False):
+            modelgateway_folder = os.path.join(ssl_cert_folder, "modelgateway")
+            check_specific_ssl_folder(
+                cert_folder=modelgateway_folder,
+                cert_id="modelgateway",
+                missing_cert=missing_cert,
+                incorrect_cert=incorrect_cert,
+            )
+
+    # Check vector database SSL certificate folders
+    if vector_database_prop and "_vector_database_ids" in vector_database_prop:
+        for vector_database_id in vector_database_prop["_vector_database_ids"]:
+            entry = vector_database_prop.get(vector_database_id, {})
+            if not entry.get("DATABASE_SSL_ENABLED", False):
+                continue
+            # Skip OpenSearch managed by the CP4BA operator (cert-manager handles it)
+            if "ica-opensearch" in entry.get("DATABASE_URL", ""):
+                continue
+
+            vd_cert_id = str(vector_database_id).lower()
+            vd_folder = os.path.join(ssl_cert_folder, vd_cert_id)
+            check_specific_ssl_folder(
+                cert_folder=vd_folder,
+                cert_id=vd_cert_id,
+                missing_cert=missing_cert,
+                incorrect_cert=incorrect_cert,
+                vector_db_folder=True,
+            )
+
+            # OIDC SSL folder check
+            if entry.get("DATABASE_AUTH_TYPE", "").lower() == "oidc":
+                oidc_cert_id = f"{vd_cert_id}-oidc"
+                oidc_folder = os.path.join(ssl_cert_folder, oidc_cert_id)
+                check_specific_ssl_folder(
+                    cert_folder=oidc_folder,
+                    cert_id=oidc_cert_id,
+                    missing_cert=missing_cert,
+                    incorrect_cert=incorrect_cert,
+                )
+
+    return missing_cert, incorrect_cert
+
+
 # Function to check if ssl certs are added to the respective folders
-def check_ssl_folders(content_assistant_prop=None,vector_database_prop=None,ssl_cert_folder=None) -> tuple:
+def check_ssl_folders(db_prop=None, ldap_prop=None, ssl_cert_folder=None, deploy_prop=None, idp_prop=None, scim_prop=None, graphql_prop=None, aiservices_prop=None) -> tuple:
     missing_cert = {}
     incorrect_cert = {}
     # if any ssl cert folders exists that means ssl was enabled for either ldap or DB
     if os.path.exists(ssl_cert_folder):
-        ssl_folders = collect_visible_files(ssl_cert_folder)
+        ssl_folders = collect_visible_folders(ssl_cert_folder)
 
         # remove any hidden files that might be picked up and remove the trusted-certs folder
         for folder in ssl_folders.copy():
             if folder == "trusted-certs":
                 ssl_folders.remove(folder)
 
-        # Creating list of different ssl folders: ldap, db, idp, scim, ai-provider
-        content_assistant_admin_access_folders = list(filter(lambda x: "cli-admin" in x, ssl_folders))
-        vector_database_folders = set(ssl_folders) - set(content_assistant_admin_access_folders)
+        # Creating list of different ssl folders: ldap, db, idp, scim, graphql, ai providers
+        ldap_folders = list(filter(lambda x: "ldap" in x, ssl_folders))
+        idp_folders = list(filter(lambda x: "idp" in x, ssl_folders))
+        scim_folders = list(filter(lambda x: "scim" in x, ssl_folders))
+        graphql_folders = list(filter(lambda x: "graphql" in x, ssl_folders))
+        # AI provider folders follow pattern: ai-provider-<provider_id>
+        ai_provider_folders = list(filter(lambda x: x.startswith("ai-provider-"), ssl_folders))
+        non_db_folders = ldap_folders + idp_folders + scim_folders + graphql_folders + ai_provider_folders
+        db_folders = set(ssl_folders) - set(non_db_folders)
 
-        # Check AI provider SSL certificates for lightweight providers
-        if content_assistant_prop and "_ai_providers_ids" in content_assistant_prop:
-            for ai_provider_id in content_assistant_prop["_ai_providers_ids"]:
-                # Check if this provider has SSL enabled (lightweight providers only)
-                if content_assistant_prop[ai_provider_id].get("SSL_ENABLED", False):
-                    # Determine the provider number for folder naming
-                    provider_number = content_assistant_prop["_ai_providers_ids"].index(ai_provider_id) + 1
-                    if provider_number == 1:
-                        ai_provider_folder = os.path.join(ssl_cert_folder, "ai-provider")
-                        cert_id = "ai-provider"
+        # if db type is not postgres we have a standard folder structure of ssl certs
+        # Only check database SSL if db_prop exists (Content operator deployed)
+        if db_prop and db_prop.get("DATABASE_SSL_ENABLE"):
+            if db_prop.get("DATABASE_TYPE", "").lower() != "postgresql":
+                for folder in db_folders:
+                    ssl_certs = collect_visible_files(os.path.join(ssl_cert_folder, folder))
+                    if not ssl_certs:
+                        missing_cert[folder] = ["certificate"]
+                    # logic to check if the cert is the right pem format
                     else:
-                        ai_provider_folder = os.path.join(ssl_cert_folder, f"ai-provider{provider_number}")
-                        cert_id = f"ai-provider{provider_number}"
-                    
-                    # Check for AI provider SSL folder and certificates
-                    check_specific_ssl_folder(cert_folder=ai_provider_folder, cert_id=cert_id,
-                                            missing_cert=missing_cert, incorrect_cert=incorrect_cert)
+                        for cert in ssl_certs:
+                            if cert.startswith("."):
+                                os.remove(os.path.join(ssl_cert_folder, folder, cert))
+                            else:
+                                pem_cert_check = check_pem_cert_format(os.path.join(ssl_cert_folder, folder, cert))
+                                if not pem_cert_check:
+                                    pem_key_check = check_pem_key_format(os.path.join(ssl_cert_folder, folder, cert))
+                                    if not pem_key_check:
+                                        incorrect_cert[folder] = ["certificate"]
+            else:
+                # if db type is postgres we have three sub folders inside the db ssl cert folders which need to be checked for ssl certs
+                for folder in db_folders:
 
-        # base logic for vector database cert folder
-        for vector_database_id in vector_database_prop["_vector_database_ids"]:
-            if vector_database_prop[vector_database_id]["DATABASE_SSL_ENABLED"]:
-                # Skip SSL certificate check for OpenSearch managed by CP4BA operator
-                # The operator manages certificates via cert-manager
-                database_url = vector_database_prop[vector_database_id].get("DATABASE_URL", "")
-                if "ica-opensearch" in database_url:
-                    continue
-                
-                # Check for vector db ssl folder
-                vector_database_folder = os.path.join(ssl_cert_folder, str(vector_database_id).lower())
-                check_specific_ssl_folder(cert_folder=vector_database_folder,cert_id=str(vector_database_id).lower(),missing_cert=missing_cert,incorrect_cert=incorrect_cert,vector_db_folder=True)
+                    sub_folder_path = os.path.join(ssl_cert_folder, folder)
+                    sub_folders = collect_visible_folders(sub_folder_path)
 
-                # If OIDC auth is enabled then check for oidc ssl folder
-                vector_database_oidc_folder = os.path.join(ssl_cert_folder,f"{str(vector_database_id).lower()}-oidc")
-                if vector_database_prop[vector_database_id]["DATABASE_AUTH_TYPE"].lower() == "oidc":
-                    check_specific_ssl_folder(cert_folder=vector_database_oidc_folder,cert_id=f"{str(vector_database_id).lower()}-oidc",missing_cert=missing_cert,incorrect_cert=incorrect_cert)
-                '''
-                if not os.path.exists(vector_database_folder):
-                    if str(vector_database_id).lower() not in missing_cert:
-                        missing_cert[str(vector_database_id).lower()] = []
-                        missing_cert[str(vector_database_id).lower()].append("certificate")
-                    else:
-                        missing_cert[str(vector_database_id).lower()].append("certificate")
-                ssl_certs = collect_visible_files(vector_database_folder)
+                    server_ca = False
+                    clientkey = False
+                    clientcert = False
+                    for sub_folder in sub_folders:
+                        if "serverca" in sub_folder.lower():
+                            server_ca_items = collect_visible_files(os.path.join(sub_folder_path, sub_folder))
+                            if server_ca_items:
+                                server_ca = True
+                                incorrect_cert_present = check_ssl_certs_postgres(server_ca_items,
+                                                                                  os.path.join(sub_folder_path,
+                                                                                               sub_folder))
+                                if not incorrect_cert_present:
+                                    if folder not in incorrect_cert:
+                                        incorrect_cert[folder] = []
+                                        incorrect_cert[folder].append("serverca")
+                                    else:
+                                        incorrect_cert[folder].append("serverca")
+
+                        if "clientkey" in sub_folder.lower():
+                            clientkey_items = collect_visible_files(os.path.join(sub_folder_path, sub_folder))
+                            if clientkey_items:
+                                clientkey = True
+                                incorrect_cert_present = check_ssl_certs_postgres(clientkey_items,
+                                                                                  os.path.join(sub_folder_path,
+                                                                                               sub_folder))
+                                if not incorrect_cert_present:
+                                    if folder not in incorrect_cert:
+                                        incorrect_cert[folder] = []
+                                        incorrect_cert[folder].append("clientkey")
+                                    else:
+                                        incorrect_cert[folder].append("clientkey")
+                        if "clientcert" in sub_folder.lower():
+                            clientcert_items = collect_visible_files(os.path.join(sub_folder_path, sub_folder))
+                            if clientcert_items:
+                                clientcert = True
+                                incorrect_cert_present = check_ssl_certs_postgres(clientcert_items,
+                                                                                  os.path.join(sub_folder_path,
+                                                                                               sub_folder))
+                                if not incorrect_cert_present:
+                                    if folder not in incorrect_cert:
+                                        incorrect_cert[folder] = []
+                                        incorrect_cert[folder].append("clientcert")
+                                    else:
+                                        incorrect_cert[folder].append("clientcert")
+                    if db_prop["DATABASE_SSL_ENABLE"]:
+                        if db_prop["SSL_MODE"].lower() == "verify-full":
+                            # All certs are required for "verify-full" mode
+                            if not server_ca:
+                                if folder not in missing_cert:
+                                    missing_cert[folder] = []
+                                    missing_cert[folder].append("serverca")
+                                else:
+                                    missing_cert[folder].append("serverca")
+                            if not clientkey:
+                                if folder not in missing_cert:
+                                    missing_cert[folder] = []
+                                    missing_cert[folder].append("clientkey")
+                                else:
+                                    missing_cert[folder].append("clientkey")
+                            if not clientcert:
+                                if folder not in missing_cert:
+                                    missing_cert[folder] = []
+                                    missing_cert[folder].append("clientcert")
+                                else:
+                                    missing_cert[folder].append("clientcert")
+                        elif db_prop["SSL_MODE"].lower() == "require":
+                            # Require mode can be either Client or Server Authentication
+                            # Selected Client Authentication
+                            if (clientcert or clientkey):
+                                if not clientkey:
+                                    if folder not in missing_cert:
+                                        missing_cert[folder] = []
+                                        missing_cert[folder].append("clientkey")
+                                    else:
+                                        missing_cert[folder].append("clientkey")
+                                if not clientcert:
+                                    if folder not in missing_cert:
+                                        missing_cert[folder] = []
+                                        missing_cert[folder].append("clientcert")
+                                    else:
+                                        missing_cert[folder].append("clientcert")
+                            # Selected Server Authentication
+                            elif not server_ca:
+                                if folder not in missing_cert:
+                                    missing_cert[folder] = []
+                                    missing_cert[folder].append("serverca")
+                                else:
+                                    missing_cert[folder].append("serverca")
+                        elif db_prop["SSL_MODE"].lower() == "verify-ca" and folder != "ldap":
+                            # Verify-ca mode requires a server-ca cert
+                            if clientcert or clientkey:
+                                if not server_ca:
+                                    if folder not in missing_cert:
+                                        missing_cert[folder] = []
+                                        missing_cert[folder].append("serverca")
+                                    else:
+                                        missing_cert[folder].append("serverca")
+
+                                if not clientkey:
+                                    if folder not in missing_cert:
+                                        missing_cert[folder] = []
+                                        missing_cert[folder].append("clientkey")
+                                    else:
+                                        missing_cert[folder].append("clientkey")
+
+                                if not clientcert:
+                                    if folder not in missing_cert:
+                                        missing_cert[folder] = []
+                                        missing_cert[folder].append("clientcert")
+                                    else:
+                                        missing_cert[folder].append("clientcert")
+                            else:
+                                if not server_ca:
+                                    if folder not in missing_cert:
+                                        missing_cert[folder] = []
+                                        missing_cert[folder].append("serverca")
+                                    else:
+                                        missing_cert[folder].append("serverca")
+
+
+        # base logic for ldap cert folder
+        for folder in ldap_folders:
+            if ldap_prop[folder.upper()]["LDAP_SSL_ENABLED"]:
+                ssl_certs = collect_visible_files(os.path.join(ssl_cert_folder, folder))
                 if not ssl_certs:
-                    if str(vector_database_id).lower() not in missing_cert:
-                        missing_cert[str(vector_database_id).lower()] = []
-                        missing_cert[str(vector_database_id).lower()].append("certificate")
+                    if folder not in missing_cert:
+                        missing_cert[folder] = []
+                        missing_cert[folder].append("certificate")
                     else:
-                        missing_cert[str(vector_database_id).lower()].append("certificate")
+                        missing_cert[folder].append("certificate")
                 else:
                     for cert in ssl_certs:
                         if cert.startswith("."):
-                            os.remove(os.path.join(vector_database_folder, cert))
+                            os.remove(os.path.join(ssl_cert_folder, folder, cert))
                         else:
-                            pem_cert_check = check_pem_cert_format(os.path.join(vector_database_folder, cert))
+                            pem_cert_check = check_pem_cert_format(os.path.join(ssl_cert_folder, folder, cert))
                             if not pem_cert_check:
-                                pem_key_check = check_pem_key_format(os.path.join(vector_database_folder, cert))
+                                pem_key_check = check_pem_key_format(os.path.join(ssl_cert_folder, folder, cert))
                                 if not pem_key_check:
-                                    incorrect_cert[str(vector_database_id).lower()] = ["certificate"]
-                '''
-                #OIDC SSL cert check
+                                    incorrect_cert[folder] = ["certificate"]
 
+        # for idp certs we have to check if the ssl is enabled and then check the certs
+        for folder in idp_folders:
+            if idp_prop[folder.upper()]["IDP_SSL_ENABLED"]:
+                ssl_certs = collect_visible_files(os.path.join(ssl_cert_folder, folder))
+                if not ssl_certs:
+                    if folder not in missing_cert:
+                        missing_cert[folder] = []
+                        missing_cert[folder].append("certificate")
+                    else:
+                        missing_cert[folder].append("certificate")
+                else:
+                    for cert in ssl_certs:
+                        if cert.startswith("."):
+                            os.remove(os.path.join(ssl_cert_folder, folder, cert))
+                        else:
+                            pem_cert_check = check_pem_cert_format(os.path.join(ssl_cert_folder, folder, cert))
+                            if not pem_cert_check:
+                                pem_key_check = check_pem_key_format(os.path.join(ssl_cert_folder, folder, cert))
+                                if not pem_key_check:
+                                    incorrect_cert[folder] = ["certificate"]
+
+        # for scim certs we have to check if the ssl is enabled and then check the certs
+        for folder in scim_folders:
+            if scim_prop[folder.upper()]["SCIM_SSL_ENABLED"]:
+                ssl_certs = collect_visible_files(os.path.join(ssl_cert_folder, folder))
+                if not ssl_certs:
+                    if folder not in missing_cert:
+                        missing_cert[folder] = []
+                        missing_cert[folder].append("certificate")
+                    else:
+                        missing_cert[folder].append("certificate")
+                else:
+                    for cert in ssl_certs:
+                        if cert.startswith("."):
+                            os.remove(os.path.join(ssl_cert_folder, folder, cert))
+                        else:
+                            pem_cert_check = check_pem_cert_format(os.path.join(ssl_cert_folder, folder, cert))
+                            if not pem_cert_check:
+                                pem_key_check = check_pem_key_format(os.path.join(ssl_cert_folder, folder, cert))
+                                if not pem_key_check:
+                                    incorrect_cert[folder] = ["certificate"]
+
+        # for graphql certs - always required when graphql folder exists
+        # GraphQL certificates are mandatory for AI Services integration
+        for folder in graphql_folders:
+            ssl_certs = collect_visible_files(os.path.join(ssl_cert_folder, folder))
+            if not ssl_certs:
+                if folder not in missing_cert:
+                    missing_cert[folder] = []
+                    missing_cert[folder].append("certificate")
+                else:
+                    missing_cert[folder].append("certificate")
+            else:
+                for cert in ssl_certs:
+                    if cert.startswith("."):
+                        os.remove(os.path.join(ssl_cert_folder, folder, cert))
+                    else:
+                        pem_cert_check = check_pem_cert_format(os.path.join(ssl_cert_folder, folder, cert))
+                        if not pem_cert_check:
+                            pem_key_check = check_pem_key_format(os.path.join(ssl_cert_folder, folder, cert))
+                            if not pem_key_check:
+                                incorrect_cert[folder] = ["certificate"]
+
+        # for AI provider certs - only check for Lightweight Engine (LWE) providers
+        if aiservices_prop:
+            # Get list of provider IDs from the aiservices properties
+            provider_ids = aiservices_prop.get("_provider_ids", [])
+            
+            for provider_id in provider_ids:
+                provider_config = aiservices_prop.get(provider_id, {})
+                provider_url = provider_config.get("PROVIDER_URL", "")
+                provider_type = provider_config.get("PROVIDER_TYPE", "").lower()
+                enabled = str(provider_config.get("ENABLED", "true")).lower() == "true"
+                
+                # Only check SSL for enabled LWE providers with HTTPS URLs
+                # SaaS providers use public certificates and don't need custom SSL certs
+                is_lwe = provider_type in ["watsonx_lwe"]
+                if enabled and is_lwe and provider_url and provider_url.startswith("https://") and provider_url != "<Required>":
+                    # Expected folder name: ai-provider-<provider_id_lowercase>
+                    expected_folder = f"ai-provider-{provider_id.lower()}"
+                    
+                    # Check if this provider's SSL folder exists in the ai_provider_folders list
+                    matching_folders = [f for f in ai_provider_folders if f.lower() == expected_folder.lower()]
+                    
+                    if matching_folders:
+                        for folder in matching_folders:
+                            ssl_certs = collect_visible_files(os.path.join(ssl_cert_folder, folder))
+                            if not ssl_certs:
+                                if folder not in missing_cert:
+                                    missing_cert[folder] = []
+                                    missing_cert[folder].append("certificate")
+                                else:
+                                    missing_cert[folder].append("certificate")
+                            else:
+                                for cert in ssl_certs:
+                                    if cert.startswith("."):
+                                        os.remove(os.path.join(ssl_cert_folder, folder, cert))
+                                    else:
+                                        pem_cert_check = check_pem_cert_format(os.path.join(ssl_cert_folder, folder, cert))
+                                        if not pem_cert_check:
+                                            pem_key_check = check_pem_key_format(os.path.join(ssl_cert_folder, folder, cert))
+                                            if not pem_key_check:
+                                                incorrect_cert[folder] = ["certificate"]
+                    else:
+                        # Provider has HTTPS URL but no SSL folder - add to missing
+                        if expected_folder not in missing_cert:
+                            missing_cert[expected_folder] = []
+                            missing_cert[expected_folder].append("certificate")
+                        else:
+                            missing_cert[expected_folder].append("certificate")
 
     return missing_cert, incorrect_cert
 
@@ -312,46 +712,6 @@ def check_dbname(db_prop):
     return incorrect_naming_convention
 
 
-# Function to check if keystore password is atleast 16characters long for FIPS enabled
-def check_keystore_password_length(user_group_prop, deploy_prop):
-    # checking if fips support is enabled
-    if "FIPS_SUPPORT" in deploy_prop.keys():
-        if deploy_prop["FIPS_SUPPORT"]:
-            if len(user_group_prop["KEYSTORE_PASSWORD"]) < 16:
-                return False
-    return True
-
-
-# Function to check if db password is atleast 16 characters long for FIPS enabled
-def check_db_password_length(db_prop, deploy_prop):
-    # checking if fips support is enabled
-    incorrect_password_dbs = []
-    if "FIPS_SUPPORT" in deploy_prop.keys():
-        if deploy_prop["FIPS_SUPPORT"] and db_prop["DATABASE_TYPE"].lower() == "postgresql":
-            for db in db_prop["db_list"]:
-                if len(db_prop[db]["DATABASE_PASSWORD"]) < 16:
-                    incorrect_password_dbs.append(db)
-    return incorrect_password_dbs
-
-
-# Function to check if db ssl mode is require for postgres for FIPS enabled
-def check_db_ssl_mode(db_prop, deploy_prop):
-    # checking if fips support is enabled
-    correct_ssl_mode = True
-    if "FIPS_SUPPORT" in deploy_prop.keys():
-        if deploy_prop["FIPS_SUPPORT"] and db_prop["DATABASE_TYPE"].lower() == "postgresql" and db_prop[
-            "DATABASE_SSL_ENABLE"]:
-            if db_prop["SSL_MODE"].lower() != "require":
-                correct_ssl_mode = False
-    return correct_ssl_mode
-
-
-def collect_visible_files(folder_path: str) -> list:
-    # Check if folder is a folder
-    if not os.path.isdir(folder_path):
-        return []
-    return [file for file in os.listdir(folder_path) if not file.startswith('.')]
-
 
 def get_skopeo_version(logger):
     try:
@@ -365,40 +725,27 @@ def get_skopeo_version(logger):
         return None
 
 
-def check_java_version(fncm_version):
+def check_java_version(ccx_version):
     try:
         java_version_output = subprocess.check_output(['java', '-version'], stderr=subprocess.STDOUT, text=True)
         version_match = re.search(r'"(\d+\.\d+\.\d+)', java_version_output)
         java_version = version_match.group(1) if version_match else "Unknown"
-        if java_version != 'Unknown':
-            if fncm_version == "5.5.8":
-                if int(java_version.split(".")[1]) != 8:
-                    return False
-            if fncm_version == "5.5.11":
-                if int(java_version.split(".")[0]) != 11:
-                    return False
 
-            if fncm_version in ("5.5.12", "5.6.0"):
-                if int(java_version.split(".")[0]) != 17:
-                    return False
+        if java_version == "Unknown":
+            return False
 
-            if fncm_version in ("5.7.0"):
-                if int(java_version.split(".")[0]) != 21:
-                    return False
-
-        return True
+        return java_version
     except subprocess.CalledProcessError as e:
         return False
 
 def create_ssl_context(client_cert_file=None) :
-    context = ssl.create_default_context(cafile=client_cert_file)
+    if client_cert_file:
+        context = ssl.create_default_context(cafile=client_cert_file)
+    else:
+        context = ssl.create_default_context()
     context.verify_flags &= ~ssl.VERIFY_X509_STRICT
-    # context = SSL.Context(SSL.SSLv23_METHOD)
-    # context.set_cipher_list(_CIPHERS)
-    # context.set_min_proto_version(SSL.TLS1_2_VERSION)
-    # if client_cert_file:
-    #     context.load_verify_locations()
-        #context.use_certificate_file(client_cert_file)
+    context.set_ciphers(_CIPHERS.decode('utf-8'))
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     return context
 
 def resolve_ip_addreses(host, progress):
@@ -410,7 +757,11 @@ def resolve_ip_addreses(host, progress):
                 ip_addreses.append(ip)
         return ip_addreses
     except socket.gaierror as e:
-        progress.log(Text(f"Failed to resolve IP for the host : {host} \nError : {e}",style="bold red"))
+        msg = Text(f"Failed to resolve IP for the host : {host} \nError : {e}", style="bold red")
+        if progress:
+            progress.log(msg)
+        else:
+            print(msg)
         return []
 
 def connect_to_server(host, port, ssl=False, client_cert_file=None, pg=False, progress=None, logger=None):
@@ -435,7 +786,9 @@ def connect_to_server(host, port, ssl=False, client_cert_file=None, pg=False, pr
         socket.gaierror: If the hostname is not known.
         Exception: If any other error occurs during the connection process.
     """
-    try :
+    conn = None
+    connected = False
+    try:
         hostname = host.strip("[]")
         addr_info = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
         # Sort addr_info to prefer IPv6 over IPv4
@@ -444,8 +797,11 @@ def connect_to_server(host, port, ssl=False, client_cert_file=None, pg=False, pr
         # Create an SSL context
         if ssl:
             logger.info(f"Connecting to {host}:{port} with SSL")
-            logger.info(f"Using SSL certificate {client_cert_file}")
-            context = create_ssl_context(client_cert_file)
+            if client_cert_file:
+                logger.info(f"Using SSL certificate {client_cert_file}")
+                context = create_ssl_context(client_cert_file)
+            else:
+                context = create_ssl_context()
             # Create an SSL socket
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0) as sock:
                 conn = context.wrap_socket(socket.socket(socket.AF_INET),
@@ -580,15 +936,13 @@ def connect_to_server_ip(host, port, ssl=False, client_cert_file=None, pg=False,
             ip_conn.close()
     return check_ip_connected
 
-# Function to check if podman, oc and other commands are available
+# Function to check if a program exists
 def command_available(command):
     try:
-        if platform.system() == 'Windows':
-            subprocess.check_output("where " + command, stderr=subprocess.PIPE, shell=True)
-        else:
-            subprocess.check_output("which " + command, stderr=subprocess.PIPE, shell=True)
-        return True
-    except subprocess.CalledProcessError as error:
+        if shutil.which(command):
+            return True
+        return False
+    except Exception as e:
         return False
 
 
@@ -605,6 +959,23 @@ def is_email(logger, usernames):
             logger.info(f"Username {username} is in email format")
             return True
     return False
+
+# # Checks whether we are properly logged into a Kubernetes/OCP cluster
+# # 'kubectl config current-context' is not sufficient it will show most recent cluster,
+# # but we cannot apply yaml which is needed to test storage classes
+# # (!!!) DOES NOT WORK WHEN INSIDE OPERATOR POD
+# def kubectl_log_in_check(logger):
+#     try:
+#         # DBACLD-161187: Changed to general 'kubectl version' command to check if kubectl is logged in
+#         subprocess.check_output("kubectl version", shell=True, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+#                                 universal_newlines=True, timeout=5)
+#         return True
+#     except subprocess.TimeoutExpired:
+#         return False
+#     except subprocess.CalledProcessError as error:
+#         logger.info("Kubectl is not logged into any cluster and " \
+#                     + f"will cause errors when checking storage classes; {error}")
+#         return False
 
 
 # method to check to if value in property file is valid
@@ -658,12 +1029,10 @@ def gather_var(key, _logger, _envfile, _error_list, section_header='', valid_val
     try:
         if section_header == '':
             value = _envfile.get(key)
-            _logger.info(f"Gathered variable {key} with value {value} from root level")
         else:
             value = _envfile[section_header][key]
             section_header = "[" + section_header + "]"
-            _logger.info(f"Gathered variable {key} with value {value} from section {section_header}")
-
+        _logger.info(f"Gathered variable {section_header + key} with value: {value}")
         # Check that the user/property file input is valid
         if valid_check(prop_key=section_header + key, prop_value=value, valid_values=valid_values, _logger=_logger,
                        _error_list=_error_list):
@@ -783,6 +1152,7 @@ def split_pem(logger, cert_file_path, tmp_folder, output_prefix="cert"):
     try:
         with open(cert_file_path, 'r') as pem_file:
             pem_content = pem_file.read()
+
     except FileNotFoundError:
         logger.exception(f"Error: File not found: {cert_file_path}")
         return []
@@ -891,61 +1261,37 @@ def ensure_base64(value: str) -> str:
 def encode_secret_contents(input_dict: dict) -> dict:
     result = {}
     for key, value in input_dict.items():
-        result[key] = base64.b64encode(value.encode('utf-8')).decode('utf-8')
+        if isinstance(value, str):
+            value = value.encode('utf-8')
+        result[key] = base64.b64encode(value).decode('utf-8')
 
     return result
 
-def validate_opensearch_password(password: str) -> tuple[bool, str]:
-    """
-    Validate password meets OpenSearch security requirements.
-    OpenSearch requires passwords to be at least 8 characters with:
-    - At least one uppercase letter
-    - At least one lowercase letter
-    - At least one digit
-    - At least one special character (shell-safe and URL-safe)
-    
-    Returns: (is_valid, error_message)
-    """
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters long"
-    
-    if not any(c.isupper() for c in password):
-        return False, "Password must contain at least one uppercase letter"
-    
-    if not any(c.islower() for c in password):
-        return False, "Password must contain at least one lowercase letter"
-    
-    if not any(c.isdigit() for c in password):
-        return False, "Password must contain at least one digit"
-    
-    # Shell-safe and URL-safe special characters only
-    # Excludes: {} [] which break URLs, and other problematic characters
-    special_chars = "!@#$%^&*()_+-=."
-    if not any(c in special_chars for c in password):
-        return False, "Password must contain at least one special character (!@#$%^&*()_+-=.)"
-    
-    return True, ""
-
-
 def generate_secure_password(length=24) -> str:
-    """
-    Generate a secure password that meets OpenSearch requirements.
-    Uses only shell-safe and URL-safe special characters to avoid breaking
-    URLs or shell scripts.
-    """
     alphabet = (
         "ABCDEFGHJKLMNPQRSTUVWXYZ"  # No I or O
         "abcdefghijkmnopqrstuvwxyz"  # No l
         "23456789"  # No 0 or 1
     )
 
-    # Shell-safe and URL-safe special characters only
-    # Excludes: {} [] / | ; : , < > ? (which can break URLs or shell scripts)
-    # Curly braces and square brackets have special meaning in URLs
-    alphabet += "!@#$%^&*()-_=+."
+    alphabet += "!@#$%^&*()-_=+[]{}|;:,.<>?/"
 
     password = ''.join(secrets.choice(alphabet) for _ in range(length))
     return password
+def decode_if_base64(value: str) -> str:
+    """
+    If value is valid Base64, return its decoded string.
+    Otherwise, return the value as-is.
+    """
+    try:
+        decoded_bytes = base64.b64decode(value, validate=True)
+        # Check if re-encoding matches to ensure it's truly base64
+        if base64.b64encode(decoded_bytes).decode('utf-8') == value:
+            return decoded_bytes.decode('utf-8', errors='ignore')
+        else:
+            return value
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        return value
 
 
 

@@ -246,6 +246,11 @@ class GenerateSecrets:
                 # WatsonX Lightweight provider type
                 data[f"AI_PROVIDER_USERNAME_{ai_provider_label.upper()}"] = self._content_assistant_properties[ai_provider]["USERNAME"]
 
+        # ModelGateway
+        if "MODELGATEWAY" in self._content_assistant_properties:
+            data["AI_PROVIDER_API_KEY_MODELGATEWAY"] = \
+                self._content_assistant_properties["MODELGATEWAY"]["API_KEY"]
+
         self.create_component_secret(data, secret_name,self._generate_secrets_folder)
 
     # function to create content assistant secret
@@ -320,6 +325,19 @@ class GenerateSecrets:
             
             ssl_certs = collect_visible_files(ai_provider_folder)
             self.create_ssl_secret(folderpath=ai_provider_folder, ssl_certs=ssl_certs, item=secret_name, prefix=f"ai-provider-{provider_number}-")
+
+    def create_modelgateway_ssl_secret(self):
+        """Create SSL secret for ModelGateway from ssl-certs/modelgateway/ folder."""
+        folder = os.path.join(self._ssl_cert_folder, "modelgateway")
+        if os.path.exists(folder):
+            self._logger.info("Creating ModelGateway SSL certificate secret")
+            ssl_certs = collect_visible_files(folder)
+            self.create_ssl_secret(
+                folderpath=folder,
+                ssl_certs=ssl_certs,
+                item="modelgateway-certificate-secret",
+                prefix="modelgateway-"
+            )
 
     # Function to create the admin access secret that generates an encrypted private key first
     def create_content_admin_access_secret(self):

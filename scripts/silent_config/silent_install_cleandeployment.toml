@@ -25,3 +25,13 @@ PLATFORM = 1
 # The value can't be empty or any of these -> "services","default","calico-system","ibm-cert-store","ibm-observe","ibm-system","ibm-odf-validation-webhook"
 # The value also can't start from openshift or kube
 NAMESPACE = "<Namespace>"
+
+# # ####################################################
+# ##                Usage Metering                  ##
+# # ####################################################
+
+# Cleanup Usage Metering deployment and operator during clean_deployment.py run
+# WARNING: Usage Metering may be shared with other deployments in this namespace.
+# Please select with caution.
+# Valid values: [true; false]
+CLEANUP_USAGE_METERING = false

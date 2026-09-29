@@ -1,0 +1,14 @@
+{
+  "URL": {
+    "value": "<Required>",
+    "comment": ["ModelGateway URL"]
+  },
+  "API_KEY": {
+    "value": "<Required>",
+    "comment": ["ModelGateway API Key"]
+  },
+  "SSL_ENABLED": {
+    "value": false,
+    "comment": ["Enable SSL for the ModelGateway connection"]
+  }
+}

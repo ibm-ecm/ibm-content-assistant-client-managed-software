@@ -51,7 +51,10 @@ class Property:
                                                                "watsonx_property.json")
         self._content_assistant_watsonx_lightweight_properties = read_json(self._json_directory,
                                                                            "watsonx_lightweight_property.json")
-        self._ingress_properties = read_json(self._json_directory, "ingress_property.json")                                                                   
+        self._content_assistant_modelgateway_properties = read_json(
+            self._json_directory, "modelgateway_property.json"
+        )
+        self._ingress_properties = read_json(self._json_directory, "ingress_property.json")
 
 
     # Create a property that gets the property folder
@@ -100,6 +103,7 @@ class Property:
             deployment_dict['CAS_VERSION']['value'] = self._gather.cas_version
             deployment_dict['LICENSE']['value'] = self._gather.license_model.upper()
             deployment_dict['PLATFORM']['value'] = self._gather.platform
+            deployment_dict['FIPS_SUPPORT']['value'] = self._gather.fips_support
             
             # Add OpenSearch cluster hostname if CP4BA and OpenSearch is selected
             if self._gather.license_model.upper() == "CP4BA" and self._gather.create_opensearch_cluster:
@@ -210,35 +214,48 @@ class Property:
             user_doc.add(comment("##          IBM Content Assistant Properties                    ##"))
             user_doc.add(comment("##################################################################"))
 
-
             user_doc.add(nl())
-            user_doc.add(comment("#########################################"))
-            user_doc.add(comment("##         AI Provider Properties      ##"))
-            user_doc.add(comment("#########################################"))
 
-            # Adjust the properties for AI provider section
-            for i in range(self._gather.ai_provider_number):
-                if i == 0:
-                    suffix = 'AI_PROVIDER'
-                else:
-                    suffix = f"AI_PROVIDER{i + 1}"
+            if "MODELGATEWAY" in content_assistant_properties:
+                user_doc.add(comment("#########################################"))
+                user_doc.add(comment("##       ModelGateway Properties       ##"))
+                user_doc.add(comment("#########################################"))
 
-                watsonx_section = table()
-                # loop through the db_properties dictionary
-                for key, value in content_assistant_properties[suffix].items():
-                    self.__write_property_table(section=watsonx_section,
+                # Write the [MODELGATEWAY] section
+                modelgateway_section = table()
+                for key, value in content_assistant_properties["MODELGATEWAY"].items():
+                    self.__write_property_table(section=modelgateway_section,
                                                 key=key,
                                                 value=value['value'],
                                                 note=value['comment'])
+                user_doc.add("MODELGATEWAY", modelgateway_section)
 
-                user_doc.add(f"{suffix}", watsonx_section)
+            else:
+                user_doc.add(comment("#########################################"))
+                user_doc.add(comment("##         AI Provider Properties      ##"))
+                user_doc.add(comment("#########################################"))
+
+                # Adjust the properties for AI provider section
+                for i in range(self._gather.ai_provider_number):
+                    if i == 0:
+                        suffix = 'AI_PROVIDER'
+                    else:
+                        suffix = f"AI_PROVIDER{i + 1}"
+
+                    watsonx_section = table()
+                    # loop through the db_properties dictionary
+                    for key, value in content_assistant_properties[suffix].items():
+                        self.__write_property_table(section=watsonx_section,
+                                                    key=key,
+                                                    value=value['value'],
+                                                    note=value['comment'])
+
+                    user_doc.add(f"{suffix}", watsonx_section)
 
             user_doc.add(nl())
 
-
             f = TOMLFile(os.path.join(self._property_folder, 'cas_properties.toml'))
             f.write(user_doc)
-
 
         except Exception as e:
             self._logger.exception(
@@ -362,11 +379,23 @@ class Property:
                 content_assistant_properties_dict[key] = copy.deepcopy(self._content_assistant_properties[key])
 
             # Select the appropriate AI provider property file based on provider type
-            if self._gather.ai_provider_type == "WATSONX_LIGHTWEIGHT":
+            if self._gather.ai_provider_type == "MODEL_GATEWAY":
+                # Build the MODELGATEWAY section
+                modelgateway_section = copy.deepcopy(self._content_assistant_modelgateway_properties)
+                modelgateway_section["SSL_ENABLED"]["value"] = self._gather.model_gateway_ssl_enabled
+                content_assistant_properties_dict["MODELGATEWAY"] = modelgateway_section
+
+                # Register SSL folder when SSL is enabled
+                if self._gather.model_gateway_ssl_enabled:
+                    self._gather.ssl_directory_list.append("modelgateway")
+
+                return content_assistant_properties_dict
+
+            elif self._gather.ai_provider_type == "WATSONX_LIGHTWEIGHT":
                 content_assistant_watsonx_property_dict = {}
                 for key in self._content_assistant_watsonx_lightweight_properties.keys():
                     content_assistant_watsonx_property_dict[key] = copy.deepcopy(self._content_assistant_watsonx_lightweight_properties[key])
-                
+
                 # Add SSL folder for lightweight providers
                 for i in range(self._gather.ai_provider_number):
                     if i == 0:
@@ -386,63 +415,11 @@ class Property:
                 else:
                     content_assistant_properties_dict[f"AI_PROVIDER{i + 1}"] = copy.deepcopy(content_assistant_watsonx_property_dict)
 
-
             return content_assistant_properties_dict
 
         except Exception as e:
             self._logger.exception(
                 "Exception from gather script in populate_content_assistant_details function -  {}".format(str(e)))
-
-    def populate_opensearch_details(self):
-        """
-        Populate OpenSearch cluster configuration details
-        """
-        try:
-            opensearch_section = {}
-            for key in self._opensearch_properties.keys():
-                opensearch_section[key] = copy.deepcopy(self._opensearch_properties[key])
-            
-            # Set values from gather object (all None since details are filled in property file)
-            opensearch_section['STORAGE_CLASS']['value'] = self._gather.opensearch_storage_class or "ocs-storagecluster-cephfs"
-            opensearch_section['BLOCK_STORAGE_CLASS']['value'] = self._gather.opensearch_block_storage_class or "ocs-storagecluster-ceph-rbd"
-            opensearch_section['CLUSTER_HOSTNAME']['value'] = self._gather.opensearch_cluster_hostname or "<Required>"
-            opensearch_section['ADMIN_PASSWORD']['value'] = self._gather.opensearch_admin_password or "<Required>"
-            opensearch_section['GENAI_PASSWORD']['value'] = self._gather.opensearch_genai_password or "<Required>"
-            
-            # Return nested under OPENSEARCH key to match table structure
-            return {'OPENSEARCH': opensearch_section}
-        
-        except Exception as e:
-            self._logger.exception(
-                "Exception from property script in populate_opensearch_details function - {}".format(str(e)))
-
-    def create_opensearch_propertyfile(self, opensearch_properties):
-        """
-        Create OpenSearch property file
-        """
-        try:
-            opensearch_doc = document()
-            opensearch_doc.add(comment("####################################################"))
-            opensearch_doc.add(comment("##        OpenSearch Cluster Properties           ##"))
-            opensearch_doc.add(comment("####################################################"))
-            opensearch_doc.add(nl())
-            
-            # Create a table section for OpenSearch properties
-            opensearch_section = table()
-            for key, value in opensearch_properties['OPENSEARCH'].items():
-                self.__write_property_table(section=opensearch_section,
-                                           key=key,
-                                           value=value['value'],
-                                           note=value['comment'])
-            
-            opensearch_doc.add("OPENSEARCH", opensearch_section)
-            
-            f = TOMLFile(os.path.join(self._property_folder, 'cas_opensearch.toml'))
-            f.write(opensearch_doc)
-            
-        except Exception as e:
-            self._logger.exception(
-                "Exception from property script in create_opensearch_propertyfile function - {}".format(str(e)))
 
     def create_idp_propertyfile(self, idp_properties_list):
         try:

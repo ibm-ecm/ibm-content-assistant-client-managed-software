@@ -15,32 +15,50 @@ import os
 import re
 import shutil
 import tarfile
+import toml
 from datetime import datetime
 
-import click
 import typer
+import click
+import questionary
+from questionary import Style
 from rich import print
 from rich.console import Console
+from rich.live import Live
 from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.progress import (BarColumn, Progress,
                            SpinnerColumn, TaskProgressColumn, TextColumn,
                            TimeElapsedColumn)
 from rich.prompt import Confirm
+from rich.table import Table
 from rich.text import Text
 from typing_extensions import Annotated
+from threading import Lock
 
 from helper_scripts.gather import gather as g
 from helper_scripts.gather import silent_gather as sg
 from helper_scripts.mustgather import mustgather as mg
 from helper_scripts.utilities import kubernetes_utilites as k
+from helper_scripts.utilities.config_models import validate_mustgather_config
 from helper_scripts.utilities.interface import (
     clear,
     display_issues,
-    display_prereq_passed, mustgather_details, mustgather_network_results)
+    display_prereq_passed, mustgather_details, mustgather_network_results,
+    display_config_validation_errors, display_prereq_validation_table,
+    display_toml_syntax_error)
 from helper_scripts.utilities.utilities import prereq_checks
 
-__version__ = "3.0.0"
+def _get_version() -> str:
+    try:
+        import yaml
+        _chart = os.path.join(os.path.dirname(__file__), "..", "helm-charts", "content-assistant", "Chart.yaml")
+        with open(_chart) as f:
+            return str(yaml.safe_load(f).get("version", "1.0.4"))
+    except Exception:
+        return "1.0.4"
+
+__version__ = "1.4.0"
 
 app = typer.Typer()
 
@@ -63,13 +81,13 @@ def setup_logger(file_log_level):
     logger.setLevel(file_log_level)
 
     # Setup console logger
-    shell_handler = RichHandler()
+    shell_handler = RichHandler(show_time=False, show_path=False)
     shell_handler.setLevel(logging.WARNING)
     formatter_rich = logging.Formatter("%(message)s")
     shell_handler.setFormatter(formatter_rich)
 
     # Setup file logger
-    file_handler = logging.FileHandler("mustgather.log")
+    file_handler = logging.FileHandler("must_gather.log")
     file_handler.setLevel(file_log_level)
     formatter_file = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(message)-100s - %(filename)s:%(lineno)d", "%Y-%m-%d %H:%M:%S")
@@ -84,37 +102,75 @@ def setup_logger(file_log_level):
 
 def version_callback(value: bool):
     if value:
-        print(f"IBM Content Assistant MustGather -- CLI: {__version__}")
+        print(f"IBM Content Assistant MustGather CLI: {__version__}")
         raise typer.Exit()
 
 def display_mode_version(mode: str, description: str):
     """
-        Display the mode and version of the script.
+    Display the mode and version of the script with active flags in a modern, visually appealing format.
+    
+    Args:
+        mode: The operation mode (e.g., "Gather All", "Gather Network Policies")
+        description: Description of what the script does
     """
     clear(console)
     print()
-    msg = f"Version: {__version__}\n" \
-          f"Mode: {mode}\n" \
-          f"{description}"
-
+    
+    # Create header table with version and mode info
+    header_table = Table.grid(padding=(0, 2))
+    header_table.add_column(style="cyan", justify="left")
+    header_table.add_column(style="white", justify="left")
+    
+    # Add version and mode rows
+    header_table.add_row("Version:", f"[bold green]{__version__}[/bold green]")
+    header_table.add_row("Mode:", f"[bold yellow]{mode}[/bold yellow]")
+    header_table.add_row("", f"[dim]{description}[/dim]")
+    
+    # Collect active flags
+    active_flags = []
+    
     if state["silent"]:
-        msg += "\nSilent Mode Enabled"
-
-    print(Panel.fit(msg, title="IBM Content Assistant MustGather -- CLI", border_style="green"))
+        active_flags.append("🤫 Silent Mode")
+    
+    if state["verbose"]:
+        active_flags.append("📢 Verbose Logging")
+    
+    if state["dryrun"]:
+        active_flags.append("🧪 Dry Run Mode")
+    
+    # Add active flags if any
+    if active_flags:
+        header_table.add_row("", "")  # Empty row for spacing
+        for flag in active_flags:
+            header_table.add_row("", f"[bold magenta]{flag}[/bold magenta]")
+    
+    # Create the main panel with modern styling
+    print(Panel(
+        header_table,
+        title="[bold white]📦 IBM Content Assistant MustGather CLI[/bold white]",
+        border_style="bright_blue",
+        padding=(1, 2),
+        expand=False
+    ))
     print()
 
 
+
+
+# Mapping from internal component names to their deployment name patterns.
+# Used when the deployment name doesn't contain the component name as a substring.
+_COMPONENT_DEPLOYMENT_PATTERNS = {
+    "genai_connector": "ibm-content-assistant",
+}
+
 # Function to filter deployments based on component
 def filter_deployments(deployment, component):
-    if component in deployment:
-        return True
-    return False
+    pattern = _COMPONENT_DEPLOYMENT_PATTERNS.get(component, component)
+    return pattern in deployment
 
 
 def create_mustgather_folder(progress, platform, components, collect_sensitive_data, cr_present=True,
                              operator_present=True):
-    progress.log()
-    progress.log("Creating MustGather folder")
     state["logger"].info("Creating MustGather folder")
 
     if os.path.exists(os.path.join(os.getcwd(), "MustGather")):
@@ -125,8 +181,6 @@ def create_mustgather_folder(progress, platform, components, collect_sensitive_d
     os.mkdir(mustgather_folder)
     state["logger"].info(f"Created MustGather folder: {mustgather_folder}")
 
-    progress.log()
-    progress.log("Creating MustGather components subfolders")
     state["logger"].info(f"Creating MustGather components subfolders")
 
     folder_names = [
@@ -159,18 +213,16 @@ def create_mustgather_folder(progress, platform, components, collect_sensitive_d
                 folder_name,
             )
         )
-    progress.log()
-    progress.log(Panel.fit("MustGather folder created", style="bold green"))
-    progress.log()
+    
     state["logger"].info(f"Created MustGather components subfolders")
     return mustgather_folder
+
 
 
 # Function to tar the mustgather folder
 def tar_mustgather_folder(mustgather_folder, progress, namespace):
     try:
         namespace_no_spaces = re.sub(r"\s+", "", namespace)
-        progress.log(Panel.fit("Generating MustGather tarfile", style="bold green"))
         state["logger"].info(f"Generating MustGather tarfile")
         now = datetime.now()
         dt_string = now.strftime("%Y-%m-%d_%H-%M")
@@ -195,6 +247,7 @@ def tar_mustgather_folder(mustgather_folder, progress, namespace):
 
 @app.callback(invoke_without_command=True)
 def main(
+        ctx: typer.Context,
         version: Annotated[bool, typer.Option(
             "--version", help="Show version and exit.",
             callback=version_callback, is_eager=True)] = None,
@@ -208,15 +261,12 @@ def main(
             help="Perform Dry Run of the mustgather script",
             rich_help_panel="Customization and Utils")] = False):
 
-    if click.get_current_context().invoked_subcommand == "networkpolicy":
+    if ctx.invoked_subcommand == "networkpolicy":
         return
     """
     IBM Content Assistant MustGather
     """
-    clear(console)
-    display_mode_version("Gather All",
-                         "IBM Content Assistant MustGather for Container Deployment")
-
+    # Set up logger FIRST before any display functions
     if verbose:
         state["verbose"] = True
         FILE_LOG_LEVEL = logging.DEBUG
@@ -230,7 +280,47 @@ def main(
 
     if dryrun:
         state["dryrun"] = True
-
+    
+    # Now display the mode/version with flags properly set
+    display_mode_version("Gather All",
+                         "IBM Content Assistant MustGather for Container Deployment")
+    
+    # Display what will be collected
+    info_text = Text()
+    info_text.append("This mode will collect:\n\n", style="bold white")
+    info_text.append("  ✓ ", style="bold green")
+    info_text.append("Cluster and namespace information\n", style="white")
+    info_text.append("  ✓ ", style="bold green")
+    info_text.append("Operator deployment details\n", style="white")
+    info_text.append("  ✓ ", style="bold green")
+    info_text.append("Custom Resource (CASCluster) configuration\n", style="white")
+    info_text.append("  ✓ ", style="bold green")
+    info_text.append("Pod logs and events\n", style="white")
+    info_text.append("  ✓ ", style="bold green")
+    info_text.append("Service and networking details\n", style="white")
+    info_text.append("  ✓ ", style="bold green")
+    info_text.append("Storage and PVC information\n", style="white")
+    
+    print(Panel(
+        info_text,
+        title="[bold white]📦 MustGather Collection[/bold white]",
+        border_style="cyan",
+        padding=(1, 2)
+    ))
+    print()
+    
+    # Log script details after logger is set up
+    log_msg = f"Version: {__version__}\nMode: Gather All\nIBM Content Assistant MustGather for Container Deployment"
+    active_flags = []
+    if state["silent"]:
+        active_flags.append("Silent Mode is enabled")
+    if state["verbose"]:
+        active_flags.append("Verbose Logging is enabled")
+    if state["dryrun"]:
+        active_flags.append("Dry Run Mode is enabled")
+    if active_flags:
+        log_msg += "\n\n" + "\n".join(active_flags)
+    state["logger"].info(f"Script details: \n{log_msg}")
 
     checks = ["connection"]
 
@@ -244,15 +334,38 @@ def main(
         state["logger"].info(f"All prerequisites did not pass.")
         exit(1)
     else:
-        prereq_summary = display_prereq_passed(results)
         state["logger"].info(f"All prerequisites passed.")
-        print(prereq_summary)
-        print()
+        display_prereq_validation_table(results)
 
     if state["silent"]:
         # this is the user details object which does pre-checks and collects some necessary details
         state["logger"].info(f"Executing in silent mode.")
         silent_path = os.path.join("silent_config", "silent_install_mustgather.toml")
+
+        # Validate configuration with Pydantic before proceeding
+        state["logger"].info(f"Validating silent mustgather configuration: {silent_path}")
+        try:
+            import toml as _toml
+            with open(silent_path, 'r') as _f:
+                _config_dict = _toml.load(_f)
+            _success, _, _validation_errors = validate_mustgather_config(_config_dict)
+            if not _success:
+                print(display_config_validation_errors(_validation_errors, silent_path))
+                raise typer.Exit(code=1)
+            state["logger"].info("✓ Configuration validated successfully")
+        except FileNotFoundError:
+            print(Panel.fit(f"❌ Configuration file not found: {silent_path}", style="bold red"))
+            raise typer.Exit(code=1)
+        except typer.Exit:
+            raise
+        except toml.TomlDecodeError as _e:
+            print(display_toml_syntax_error(_e, silent_path))
+            raise typer.Exit(code=1)
+        except Exception as _e:
+            state["logger"].error(f"Unexpected error loading configuration: {str(_e)}")
+            print(Panel.fit(f"❌ Unexpected error: {str(_e)}", style="bold red"))
+            raise typer.Exit(code=1)
+
         setup = sg.SilentGatherOptions(state["logger"], silent_path, script_type="must_gather")
         setup.silent_parse_mustgather_operator_file()
     else:
@@ -264,18 +377,22 @@ def main(
     collect_sensitive_data = setup.sensitive_collect
 
     kube = k.KubernetesUtilities(state["logger"])
+
+    # Collect IBM Content Assistant operator details
+    operator_deployment = "ibm-content-assistant-operator"
+    state["logger"].info(f"Collecting Operator details for {operator_deployment}")
+    operator_details = kube.get_operator_details(namespace, operator_deployment)
+    operator_present = bool(operator_details)
+    if operator_present:
+        state["logger"].info(f"Found operator: {operator_deployment}")
+    else:
+        state["logger"].warning(f"Operator not found in namespace: {operator_deployment}")
+
     # Collect CR details
     state["logger"].info(f"Collecting CR details")
     custom_resources = kube.get_deployment_cr(namespace=namespace, logger=state["logger"])
     components = []
     deployment_details = {}
-
-    # Collect Operator details
-    state["logger"].info(f"Collecting Operator details")
-    operator_deployment = "ibm-content-assistant-operator"
-    operator_details = kube.get_operator_details(namespace, operator_deployment)
-
-    operator_present = bool(operator_details)
 
     if len(custom_resources) == 0:
         cr_present = False
@@ -284,232 +401,379 @@ def main(
     else:
         cr_present = True
         deployment_details = kube.cr_details
-        version = deployment_details["version"]
-        deployments = deployment_details["components"]
+        deployments = deployment_details.get("components", [])
 
         if not state["silent"]:
-            clear(console)
             state["logger"].info(f"Collecting mustgather components.")
-            setup.collect_mustgather_components(deployments, version)
+            setup.collect_mustgather_components(deployments)
             components = list(setup.components)
             state["logger"].info(f"Components for mustgather: {components}")
-
         else:
             components = list(setup.components)
 
-    summary = mustgather_details(deployment_details, components, operator_details)
+    all_operator_details = {"content-assistant": operator_details} if operator_present else {}
+    summary = mustgather_details(deployment_details, components, all_operator_details, ["content-assistant"])
 
-    clear(console)
+    print()
     print(summary)
 
     if not state["silent"]:
-        if not Confirm.ask("Do you want to proceed with the MustGather?"):
-            raise typer.Exit()
+        proceed = questionary.confirm(
+            f"🚀 Ready to collect MustGather data for IBM Content Assistant Operator. Proceed?",
+            default=True,
+            style=Style([
+                ('question', 'fg:cyan bold'),
+                ('answer', 'fg:green bold')
+            ])
+        ).ask()
+        
+        if not proceed:
+            state["logger"].warning("MustGather cancelled by user")
+            print()
+            print(Panel.fit("❌ MustGather Collection Cancelled", style="yellow"))
+            raise typer.Exit(code=1)
+    
     if state["dryrun"]:
+        print()
+        print(Panel.fit("✓ Dry Run Complete - No Data Collected", style="green"))
         exit()
-    clear(console)
-    print(Panel.fit("Starting IBM Content Assistant MustGather", style="cyan"))
-    state["logger"].info(f"Starting FileNet Content Manager MustGather")
 
-    with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            TimeElapsedColumn(),
-            console=console,
-            transient=False,
-    ) as progress:
-        task1 = progress.add_task("[cyan]Collecting Cluster Info", total=None)
+    print()
+    print(Panel.fit("🔄 Starting MustGather Collection\nIBM Content Assistant Operator", style="bold cyan", border_style="cyan"))
+    state["logger"].info("Starting MustGather for IBM Content Assistant Operator")
+
+    # Initialize status tracking for Live display
+    collection_status = {
+        "Cluster Info": {"status": "⏳ Pending", "details": ""},
+        "Operator Info": {"status": "⏳ Pending", "details": ""},
+        "Deployment Artifacts": {"status": "⏳ Pending", "details": ""},
+        "Component Logs": {"status": "⏳ Pending", "details": ""},
+        "Tar File": {"status": "⏳ Pending", "details": ""}
+    }
+    status_lock = Lock()
+    
+    def create_collection_status_table():
+        """Create a fresh status table with current collection status"""
+        table = Table(
+            title="📦 MustGather Collection Progress",
+            show_header=True,
+            header_style="bold cyan",
+            border_style="cyan",
+            title_style="bold cyan"
+        )
+        table.add_column("Collection Phase", style="cyan", width=25)
+        table.add_column("Status", style="white", width=20)
+        table.add_column("Details", style="white", width=50)
+        
+        for phase, info in collection_status.items():
+            status = info["status"]
+            details = info["details"]
+            
+            if "Complete" in status or "✓" in status:
+                style = "green"
+            elif "Collecting" in status or "🔄" in status:
+                style = "yellow"
+            elif "Error" in status or "✗" in status:
+                style = "red"
+            else:
+                style = "dim white"
+            
+            table.add_row(
+                phase,
+                Text(status, style=style),
+                Text(details, style="dim white" if not details else "white")
+            )
+        return table
+    
+    # Prepare platform and resource details
+    platform = "OCP"
+    if operator_present and operator_details.get("type") == "YAML":
+        platform = "other"
+
+    # Prepare CR details if present
+    resource_type_dict = None
+    pod_count_dict = {}
+    num_collections = 0
+
+    if cr_present:
+        cr_name = deployment_details["name"]
+        platform = deployment_details["platform"]
+        storage_class = deployment_details["storage_classes"]
+        user_secrets = deployment_details["user_secrets"]
+        user_configmaps = deployment_details["user_configmaps"]
+
+        resource_type_dict = kube.list_namespace_resources(console=console,
+                                                           namespace=namespace,
+                                                           filter=cr_name)
+
+        # Build pod_count_dict for the genai_connector component
+        for component in components:
+            state["logger"].info(f"Getting deployments for component: {component}")
+            deployment_dict_component = list(filter(
+                lambda x: filter_deployments(x, component),
+                resource_type_dict["deployment"]
+            ))
+            pod_count_dict[component] = []
+            for deploy in deployment_dict_component:
+                num_collections += 1
+                details_dict = {}
+                details_dict["deployment"] = deploy
+                pods = kube.get_pod_names_for_deployment(namespace, deploy)
+                init_containers = kube.get_init_containers_for_deployment(namespace, deploy)
+                details_dict["init_containers"] = init_containers
+                details_dict["pods"] = pods
+                details_dict["count"] = len(pods) if pods else 0
+                pod_count_dict[component].append(details_dict)
+    
+    # Use Live display for real-time status updates
+    print()
+    with Live(create_collection_status_table(), console=console, refresh_per_second=4) as live:
+        # Create MustGather folder
+        mustgather_folder = create_mustgather_folder(None, platform, components, collect_sensitive_data,
+                                                     cr_present, operator_present)
+
+        must_gather = mg.MustGather(console, namespace, state["logger"], mustgather_folder, deployment_details,
+                                    operator_details, kube)
+
+        # Phase 1: Collect Cluster Info
+        with status_lock:
+            collection_status["Cluster Info"]["status"] = "🔄 Collecting..."
+            collection_status["Cluster Info"]["details"] = "Cluster version, nodes, events..."
+            live.update(create_collection_status_table())
+
         state["logger"].info(f"Collecting cluster information")
-        # Check is operator is present
+        must_gather.collect_cluster_info(None)
+
+        with status_lock:
+            collection_status["Cluster Info"]["status"] = "✓ Complete"
+            collection_status["Cluster Info"]["details"] = "Version, nodes, events collected"
+            live.update(create_collection_status_table())
+
+        # Phase 2: Collect Operator Info
         if operator_present:
-            task2 = progress.add_task("[purple]Collecting IBM Content Assistant Operator Info", total=None)
-            if operator_details["type"] == "YAML":
-                platform = "other"
+            with status_lock:
+                collection_status["Operator Info"]["status"] = "🔄 Collecting..."
+                collection_status["Operator Info"]["details"] = "Collecting IBM Content Assistant Operator..."
+                live.update(create_collection_status_table())
+
+            state["logger"].info("Collecting IBM Content Assistant Operator information")
+
+            with status_lock:
+                collection_status["Operator Info"]["details"] = "RBAC resources..."
+                live.update(create_collection_status_table())
+            must_gather.collect_rbac_info(None, operator_details)
+
+            with status_lock:
+                collection_status["Operator Info"]["details"] = "Deployment & logs..."
+                live.update(create_collection_status_table())
+            must_gather.collect_operator_info(None, collect_sensitive_data, operator_details)
+
+            with status_lock:
+                collection_status["Operator Info"]["status"] = "✓ Complete"
+                collection_status["Operator Info"]["details"] = "IBM Content Assistant Operator collected"
+                live.update(create_collection_status_table())
+        else:
+            with status_lock:
+                collection_status["Operator Info"]["status"] = "⊘ Skipped"
+                collection_status["Operator Info"]["details"] = "No operator found"
+                live.update(create_collection_status_table())
+
+        # Phase 3: Collect Deployment Artifacts
+        if cr_present and resource_type_dict:
+            with status_lock:
+                collection_status["Deployment Artifacts"]["status"] = "🔄 Collecting..."
+                collection_status["Deployment Artifacts"]["details"] = "Custom Resource..."
+                live.update(create_collection_status_table())
+
+            # Download CASCluster CR file
+            state["logger"].info(f"Downloading CASCluster CR file")
+            must_gather.write_cr_file(None, deployment_details["name"])
+
+            # Collect all Deployments
+            with status_lock:
+                collection_status["Deployment Artifacts"]["details"] = f"Deployments ({len(resource_type_dict['deployment'])})..."
+                live.update(create_collection_status_table())
+            state["logger"].info(f"Collecting all deployments")
+            if len(resource_type_dict["deployment"]) > 0:
+                deployments = resource_type_dict["deployment"]
+                must_gather.collect_deployment_info(None, deployments)
+
+            # Collect all PodDisruptionBudget Info
+            state["logger"].info(f"Collecting PodDisruptionBudget (PDB) information")
+            if resource_type_dict.get("pod_disruption_budget"):
+                with status_lock:
+                    collection_status["Deployment Artifacts"]["details"] = "PodDisruptionBudgets..."
+                    live.update(create_collection_status_table())
+                pdbs = resource_type_dict["pod_disruption_budget"]
+                must_gather.collect_pdb_info(None, pdbs)
+
+            # Collect all HorizontalPodAutoscaler Info
+            state["logger"].info(f"Collecting HorizontalPodAutoscaler (HPA) information")
+            if resource_type_dict.get("horizontal_pod_autoscaler"):
+                with status_lock:
+                    collection_status["Deployment Artifacts"]["details"] = "HorizontalPodAutoscalers..."
+                    live.update(create_collection_status_table())
+                hpas = resource_type_dict["horizontal_pod_autoscaler"]
+                must_gather.collect_hpa_info(None, hpas)
+
+            # Collect all StorageClass Info
+            with status_lock:
+                collection_status["Deployment Artifacts"]["details"] = "Storage Classes & PVCs..."
+                live.update(create_collection_status_table())
+            state["logger"].info(f"Collecting all storage class information")
+            if len(storage_class) > 0:
+                must_gather.collect_storage_class_info(None, storage_class)
+
+            # Collect all PersistentVolume Info
+            state["logger"].info(f"Collecting persistent volume information")
+            if len(resource_type_dict["persistent_volume_claim"]) > 0:
+                pvcs = resource_type_dict["persistent_volume_claim"]
+                must_gather.collect_pvc_info(None, pvcs)
+
+            # Collect all Service Info
+            with status_lock:
+                collection_status["Deployment Artifacts"]["details"] = f"Services ({len(resource_type_dict['service'])})..."
+                live.update(create_collection_status_table())
+            state["logger"].info(f"Collecting services information")
+            if len(resource_type_dict["service"]) > 0:
+                services = resource_type_dict["service"]
+                must_gather.collect_service_info(None, services)
+
+            # Collect all NetworkPolicy Info
+            with status_lock:
+                collection_status["Deployment Artifacts"]["details"] = "Network Policies..."
+                live.update(create_collection_status_table())
+            state["logger"].info(f"Collecting network policy information")
+            if len(resource_type_dict["network_policy"]) > 0:
+                network_policies = resource_type_dict["network_policy"]
+                must_gather.collect_network_policy_info(None, network_policies)
+
+            if platform == "other":
+                with status_lock:
+                    collection_status["Deployment Artifacts"]["details"] = "Ingresses..."
+                    live.update(create_collection_status_table())
+                state["logger"].info(f"Collecting ingresses information")
+                if len(resource_type_dict.get("ingress", [])) > 0:
+                    must_gather.collect_ingress_info(None, resource_type_dict["ingress"])
             else:
-                platform = "OCP"
+                with status_lock:
+                    collection_status["Deployment Artifacts"]["details"] = "Routes..."
+                    live.update(create_collection_status_table())
+                state["logger"].info(f"Collecting routes information")
+                if len(resource_type_dict.get("routes", [])) > 0:
+                    must_gather.collect_route_info(None, resource_type_dict["routes"])
 
-        # Check if CR is present
-        if cr_present:
-            cr_name = deployment_details["name"]
-            platform = deployment_details["platform"]
-            storage_class = deployment_details["storage_classes"]
-            user_secrets = deployment_details["user_secrets"]
-            user_configmaps = deployment_details["user_configmaps"]
+            if collect_sensitive_data:
+                with status_lock:
+                    collection_status["Deployment Artifacts"]["details"] = "Secrets & ConfigMaps..."
+                    live.update(create_collection_status_table())
+                state["logger"].info(f"Collecting secrets information")
+                secrets = resource_type_dict["secret"]
+                secrets.extend(user_secrets)
+                if len(secrets) > 0:
+                    must_gather.collect_secret_info(None, secrets)
 
-            resource_type_dict = kube.list_namespace_resources(console=console,
-                                                               namespace=namespace,
-                                                               platform=platform,
-                                                               filter=cr_name)
+                state["logger"].info(f"Collecting ConfigMaps information")
+                configmaps = resource_type_dict["config_map"]
+                configmaps.extend(user_configmaps)
+                if len(configmaps) > 0:
+                    must_gather.collect_configmap_info(None, configmaps)
 
-            # Calculate number of pods per component to be collected
-            num_components = len(components)
-            num_collections = 0
-            if num_components != 0:
-                deployment_dict = {}
-                for component in components:
+            with status_lock:
+                collection_status["Deployment Artifacts"]["status"] = "✓ Complete"
+                collection_status["Deployment Artifacts"]["details"] = f"{len(resource_type_dict['deployment'])} deployments, {len(resource_type_dict['service'])} services"
+                live.update(create_collection_status_table())
+        else:
+            with status_lock:
+                collection_status["Deployment Artifacts"]["status"] = "⊘ Skipped"
+                collection_status["Deployment Artifacts"]["details"] = "No CR found"
+                live.update(create_collection_status_table())
 
-                    # Get deployments for each component
-                    state["logger"].info(f"Getting deployments for component: {component}")
-                    if component == "genai_connector":
-                        deployment_dict[component] = filter(lambda x: filter_deployments(x, "content-assistant-deployment"),
-                                                            resource_type_dict["deployment"])
-                    else:
-                        deployment_dict[component] = filter(lambda x: filter_deployments(x, component),
-                                                            resource_type_dict["deployment"])
+        # Phase 4: Collect Component Logs
+        if len(components) > 0 and num_collections > 0:
+            with status_lock:
+                collection_status["Component Logs"]["status"] = f"🔄 Collecting (0/{num_collections})..."
+                live.update(create_collection_status_table())
 
-                pod_count_dict = {}
-                for component in components:
-                    pod_count_dict[component] = []
-                    for deploy in deployment_dict[component]:
-                        num_collections += 1
-                        details_dict = {}
-
-                        details_dict["deployment"] = deploy
-                        pods = kube.get_pod_names_for_deployment(namespace, deploy)
-                        init_containers = kube.get_init_containers_for_deployment(namespace, deploy)
-                        details_dict["init_containers"] = init_containers
-                        details_dict["pods"] = pods
-                        details_dict["count"] = len(pods)
-                        pod_count_dict[component].append(details_dict)
-
-            task4 = None
-
-            task3 = progress.add_task("[magenta]Collecting Deployment Artifacts", total=None)
-
-        if len(components) > 0:
-            if num_collections > 0:
-                task4 = progress.add_task(f"[yellow]Collecting Component Logs", total=num_collections)
-            else:
-                task4 = progress.add_task(f"[yellow]Collecting Component Logs", total=1)
-
-        task5 = progress.add_task("[blue]Creating MustGather Tar File", total=1)
-
-        while not progress.finished:
-            mustgather_folder = create_mustgather_folder(progress, platform, components, collect_sensitive_data,
-                                                         cr_present, operator_present)
-
-            must_gather = mg.MustGather(console, namespace, state["logger"], mustgather_folder, deployment_details,
-                                        operator_details, kube)
-            must_gather.collect_cluster_info(progress)
-
-            progress.update(task1, total=2, completed=2)
-
-            if operator_details:
-                # Collect RBAC Info
-                must_gather.collect_rbac_info(progress, operator_details)
-                # Collect Operator Info
-                must_gather.collect_operator_info(progress, collect_sensitive_data, operator_details)
-
-                progress.update(task2, total=1, completed=1)
-
-            if cr_present:
-                # Download CR
-                state["logger"].info(f"Downloading CR file")
-                must_gather.write_cr_file(progress, deployment_details["name"])
-
-                # Collect all Deployments
-                state["logger"].info(f"Collecting all deployments")
-                if len(resource_type_dict["deployment"]) > 0:
-                    deployments = resource_type_dict["deployment"]
-                    must_gather.collect_deployment_info(progress, deployments)
-
-                # Collect all PodDisruptionBudget Info
-                state["logger"].info(f"Collecting PodDisruptionBudget (PDB) information")
-                if resource_type_dict.get("pod_disruption_budget"):
-                    pdbs = resource_type_dict["pod_disruption_budget"]
-                    must_gather.collect_pdb_info(progress, pdbs)
-
-                # Collect all HorizontalPodAutoscaler Info
-                state["logger"].info(f"Collecting HorizontalPodAutoscaler (HPA) information")
-                if resource_type_dict.get("horizontal_pod_autoscaler"):
-                    hpas = resource_type_dict["horizontal_pod_autoscaler"]
-                    must_gather.collect_hpa_info(progress, hpas)
-
-                # Collect all StorageClass Info
-                state["logger"].info(f"Collecting all storage class information")
-                if len(storage_class) > 0:
-                    must_gather.collect_storage_class_info(progress, storage_class)
-
-                # Collect all PersistentVolume Info
-                state["logger"].info(f"Collecting persistent volume information")
-                if len(resource_type_dict["persistent_volume_claim"]) > 0:
-                    pvcs = resource_type_dict["persistent_volume_claim"]
-                    must_gather.collect_pvc_info(progress, pvcs)
-
-                # Collect all Service Info
-                state["logger"].info(f"Collecting services information")
-                if len(resource_type_dict["service"]) > 0:
-                    services = resource_type_dict["service"]
-                    must_gather.collect_service_info(progress, services)
-
-                # Collect all NetworkPolicy Info
-                state["logger"].info(f"Collecting network policy information")
-                if len(resource_type_dict["network_policy"]) > 0:
-                    network_policies = resource_type_dict["network_policy"]
-                    must_gather.collect_network_policy_info(progress, network_policies)
-
-                if platform == "other":
-                    state["logger"].info(f"Collecting ingresses information")
-                    if len(resource_type_dict["ingress"]) > 0:
-                        ingress = resource_type_dict["ingress"]
-                        must_gather.collect_ingress_info(progress, ingress)
+            collected_count = 0
+            for component in components:
+                if component not in pod_count_dict or len(pod_count_dict[component]) == 0:
+                    state["logger"].info(f"No Pods Found for {component}")
                 else:
-                    state["logger"].info(f"Collecting routes information")
-                    if len(resource_type_dict["routes"]) > 0:
-                        routes = resource_type_dict["routes"]
-                        must_gather.collect_route_info(progress, routes)
-
-                if collect_sensitive_data:
-                    state["logger"].info(f"Collecting secrets information")
-                    secrets = resource_type_dict["secret"]
-                    secrets.extend(user_secrets)
-                    if len(secrets) > 0:
-                        must_gather.collect_secret_info(progress, secrets)
-
-                    state["logger"].info(f"Collecting ConfigMaps information")
-                    configmaps = resource_type_dict["config_map"]
-                    configmaps.extend(user_configmaps)
-                    if len(configmaps) > 0:
-                        must_gather.collect_configmap_info(progress, configmaps)
-
-                progress.update(task3, total=1, completed=1)
-
-                if num_collections > 0:
-                    for component in components:
-                        if component == "genai_connector":
-                            if len(pod_count_dict[component]) == 0:
-                                progress.log()
-                                progress.log(Panel.fit("No Pods Found for GenAI Connector", style="bold red"))
-                            else:
-                                for deploy in pod_count_dict[component]:
-                                    must_gather.collect_genai_connector_info(progress,
-                                                                             collect_sensitive_data,
-                                                                             deploy["pods"],
-                                                                             deploy["init_containers"])
-                                    progress.advance(task4)
-
-                else:
-                    if components:
-                        progress.log()
-                        progress.log(Panel.fit("No Pods Found for Selected Components", style="bold red"))
-                        progress.log()
-                        state["logger"].info(f"No Pods Found for Selected Components")
-                        progress.advance(task4)
-
-            tar_mustgather_folder(mustgather_folder, progress, namespace)
-            progress.advance(task5)
-            progress.stop()
+                    with status_lock:
+                        collection_status["Component Logs"]["details"] = f"Collecting {component} logs..."
+                        live.update(create_collection_status_table())
+                    for deploy in pod_count_dict[component]:
+                        must_gather.collect_genai_connector_info(None,
+                                                                 collect_sensitive_data,
+                                                                 deploy["pods"],
+                                                                 deploy["init_containers"])
+                        collected_count += 1
+                        with status_lock:
+                            collection_status["Component Logs"]["status"] = f"🔄 Collecting ({collected_count}/{num_collections})..."
+                            live.update(create_collection_status_table())
+            
+            with status_lock:
+                collection_status["Component Logs"]["status"] = "✓ Complete"
+                collection_status["Component Logs"]["details"] = f"{num_collections} component deployments collected"
+                live.update(create_collection_status_table())
+        else:
+            if len(components) > 0:
+                state["logger"].info(f"No Pods Found for Selected Components")
+            with status_lock:
+                collection_status["Component Logs"]["status"] = "⊘ Skipped"
+                collection_status["Component Logs"]["details"] = "No components or pods found"
+                live.update(create_collection_status_table())
+        
+        # Phase 5: Create Tar File
+        with status_lock:
+            collection_status["Tar File"]["status"] = "🔄 Creating..."
+            collection_status["Tar File"]["details"] = f"Compressing {namespace} MustGather..."
+            live.update(create_collection_status_table())
+        
+        tar_mustgather_folder(mustgather_folder, None, namespace)
+        
+        with status_lock:
+            collection_status["Tar File"]["status"] = "✓ Complete"
+            collection_status["Tar File"]["details"] = f"MustGather_{namespace}.tar.gz created"
+            live.update(create_collection_status_table())
+    
+    # Final summary
+    print()
+    print(Panel.fit("✓ MustGather Collection Complete", style="bold green"))
+    print()
 
 @app.command()
 def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated network policies to the cluster")):
     """
     Collect the Network policy templates from the IBM Content Assistant Operator
     """
-    clear(console)
+    # Set up logger FIRST
+    state["logger"] = setup_logger(logging.INFO)
+    
     display_mode_version("Gather Network Policies",
                         "IBM Content Assistant MustGather for Container Deployment")
+    
+    # Display what will be collected
+    info_text = Text()
+    info_text.append("This mode will collect:\n\n", style="bold white")
+    info_text.append("  ✓ ", style="bold green")
+    info_text.append("Network policy templates from operator\n", style="white")
+    info_text.append("  ✓ ", style="bold green")
+    info_text.append("Current network policy configurations\n", style="white")
+    info_text.append("  ✓ ", style="bold green")
+    info_text.append("Generate deployment-specific policies\n", style="white")
+    if apply:
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Apply policies to cluster\n", style="white")
+    
+    print(Panel(
+        info_text,
+        title="[bold white]🔒 Network Policy Collection[/bold white]",
+        border_style="cyan",
+        padding=(1, 2)
+    ))
+    print()
 
     checks = ["connection"]
 
@@ -519,9 +783,8 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
         print(layout)
         exit(1)
     else:
-        prereq_summary = display_prereq_passed(results)
-        print(prereq_summary)
-        print()
+        state["logger"].info(f"All prerequisites passed.")
+        display_prereq_validation_table(results)
 
     setup = g.GatherOptions(state["logger"], console, script_type="must_gather")
     setup.collect_namespace()
@@ -532,7 +795,9 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
     operator_deployment = "ibm-content-assistant-operator"
     namespace = setup.namespace
     operator_details = kube.get_operator_details(namespace, operator_deployment)
-    state["logger"].info(f"Operator: {operator_details}")
+    if not operator_details:
+        print(Panel.fit(Text("IBM Content Assistant Operator not found in namespace."), style="bold red"))
+        raise typer.Exit()
     np_folder = os.path.join(os.getcwd(), "CASNetworkPolicies", namespace)
     must_gather = mg.MustGather(console, namespace, state["logger"], np_folder, deployment_details, operator_details, kube)
     if apply:
@@ -555,10 +820,11 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
                 if operator_details:
                     task1 = progress.add_task("[cyan]Collect Network Policies", total=None)
                     state["logger"].info(f"Collecting network policies")
-                    must_gather.collect_network_policy_templates(progress, operator_details)
+                    must_gather.collect_network_policy_templates(progress, operator_details) 
                     progress.update(task1, total=1, completed=1)
                 else:
                     print(Panel.fit(Text("IBM Content Assistant Operator not found in namespace."),style="bold red"))
+                    state["logger"].info(f"IBM Content Assistant Operator not found in namespace.")
                     raise typer.Exit()
 
             # Output Network Policy Template folder
@@ -569,7 +835,23 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
             must_gather.auto_apply_networkpolicy()
         raise typer.Exit()
 
-    else:
+    else:        
+        setup = g.GatherOptions(state["logger"], console, script_type="must_gather")
+        setup.collect_namespace()
+        kube = k.KubernetesUtilities(state["logger"])
+
+        deployment_details = {}
+
+        # Collect Operator details
+        operator_deployment = "ibm-content-assistant-operator"
+        namespace = setup.namespace
+        operator_details = kube.get_operator_details(namespace, operator_deployment)
+        if not operator_details:
+            print(Panel.fit(Text("IBM Content Assistant Operator not found in namespace."), style="bold red"))
+            raise typer.Exit()
+        np_folder = os.path.join(os.getcwd(), "CASNetworkPolicies", namespace)
+
+        must_gather = mg.MustGather(console, namespace, state["logger"], np_folder, deployment_details,operator_details, kube)
         if os.path.exists(np_folder):
             namespace_no_spaces = re.sub(r"\s+", "", namespace)
             now = datetime.now()
@@ -586,8 +868,8 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
 
         if len(operator_details.get("pods", 0)) == 0:
             print()
-            print(Panel.fit(Text("FileNet Content Manager Operator not found in namespace."), style="bold red"))
-            state["logger"].info(f"FileNet Content Manager Operator not found in namespace.")
+            print(Panel.fit(Text("IBM Content Assistant Operator not found in namespace."), style="bold red"))
+            state["logger"].info(f"IBM Content Assistant Operator not found in namespace.")
             raise typer.Exit()
 
         print()
@@ -612,7 +894,7 @@ def networkpolicy(apply: bool = typer.Option(False, help="Apply all generated ne
 
         apply_networkpolicy = Confirm.ask("Do you want to apply the retrieved network policies to your cluster?", default=False)
         if apply_networkpolicy:
-            state["logger"].info(f"Applying the Network Policies.")
+            state["logger"].info(f"Appliying the Network Policies.")
             must_gather.auto_apply_networkpolicy()
         raise typer.Exit()
 

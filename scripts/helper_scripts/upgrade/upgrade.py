@@ -13,23 +13,24 @@ import re
 import shutil
 from datetime import datetime
 from pathlib import Path
-from time import sleep
 
 import yaml
 from rich import print
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
+from time import sleep
 
 from ..utilities import kubernetes_utilites as k
 from ..utilities.prerequisites_utilites import zip_folder, write_yaml_to_file
 from ..utilities.utilities import replace_namespace_in_file, create_tmp_folder, is_key_present, update_value_by_path, \
     find_keys_and_structures, delete_key_by_path
+from ..generate.generate_metrics import GenerateMetrics
 
 
 # Class to handle upgrade operator and deployment related functionalities
 class Upgrade:
-    def __init__(self, console, setup=None, logger=None, silent=False, required_files=None):
+    def __init__(self, console, setup=None, logger=None, silent=False, required_files=None, selected_license=None):
         self._logger = logger
         self._console = console
         self._silent = silent
@@ -38,6 +39,7 @@ class Upgrade:
         self._namespace = self._setup.namespace
         self._cr_present = True
         self._operator_present = True
+        self._selected_license = selected_license
 
         # checking if custom resource file exists
         cr_details = self._kube.get_deployment_cr(namespace=self._namespace, logger=self._logger)
@@ -47,8 +49,8 @@ class Upgrade:
             self._logger.info(f"No Custom Resource file found in '{self._namespace}'.")
 
         # checking if operator exists
-        if self._setup.platform.lower() == "ocp":
-            self._subscription_details = self._kube.get_subscription(namespace=self._namespace)
+        # Check for subscription regardless of platform (OLM can be used on both OCP and CNCF)
+        self._subscription_details = self._kube.get_subscription(namespace=self._namespace)
 
         # Collect Operator details
         operator_deployment = "ibm-content-assistant-operator"
@@ -77,6 +79,7 @@ class Upgrade:
         # Tmp File paths for the resources
         create_tmp_folder()
         modified_files = [
+            "cluster_role_binding.yaml",
             "catalogsource.yaml",
             "operator_group.yaml",
             "subscription.yaml",
@@ -86,13 +89,14 @@ class Upgrade:
         for file in modified_files:
             self.tmp_file_paths[file] = os.path.join(os.getcwd(), ".tmp", file)
 
-        self._download_location = os.path.join(os.getcwd(), "CASUpgrade")
-        self._cr_template_save_location = os.path.join(os.getcwd(), "CASUpgrade", "CustomResources")
+        self._download_location = os.path.join(os.getcwd(), "CASUpgrade", self._namespace)
+        self._cr_template_save_location = os.path.join(os.getcwd(), "CASUpgrade", self._namespace, "CustomResources")
         self._current_cr_template_save_location = ""
         self._updated_cr_template_save_location = ""
-        self._networkwork_policy_save_location = os.path.join(os.getcwd(), "CASUpgrade", "NetworkPolicies")
+        self._networkwork_policy_save_location = os.path.join(os.getcwd(), "CASUpgrade", self._namespace, "NetworkPolicies")
         self._networkwork_policy_ingress_save_location= os.path.join(self._networkwork_policy_save_location, "Ingress")
         self._networkwork_policy_egress_save_location = os.path.join(self._networkwork_policy_save_location, "Egress")
+        self._metrics_save_location = os.path.join(os.getcwd(), "CASUpgrade", self._namespace, "Metrics")
 
         if "catalogType" in self._operator_details:
             self._catalog_type = self._operator_details["catalogType"]
@@ -105,14 +109,27 @@ class Upgrade:
             self._catalog_type = "Private"
             self._catalog_namespace = self._namespace
 
-        if self._setup.platform.lower() == "ocp":
+        # Determine deployment type based on catalog type (not platform)
+        # Helm is the default for both OCP and CNCF platforms
+        if self._catalog_type != "Private":
+            # Global catalog indicates OLM deployment
             self._deployment_type = "olm"
             self._task_numbers = {
                 "UpgradeSetup": 3,
                 "Upgrade": 4,
             }
+            if "type" in self._operator_details:
+                if self._operator_details["type"] == "YAML":
+                    self._remove_yaml = True
+                    self._task_numbers["CleanYaml"] = 3
+                else:
+                    self._remove_yaml = False
+            else:
+                self._remove_yaml = False
         else:
-            self._deployment_type = "other"
+            # Private catalog or Helm deployment
+            self._deployment_type = "helm"
+            self._remove_yaml = False
             self._task_numbers = {
                 "UpgradeSetup": 4,
                 "Upgrade": 3,
@@ -157,6 +174,10 @@ class Upgrade:
         self._version_details = value
 
     @property
+    def remove_yaml(self):
+        return self._remove_yaml
+
+    @property
     def task_numbers(self):
         return self._task_numbers
 
@@ -183,6 +204,98 @@ class Upgrade:
     @catalog_type.setter
     def catalog_type(self, value):
         self._catalog_type = value
+
+    @property
+    def selected_license(self):
+        return self._selected_license
+
+    @selected_license.setter
+    def selected_license(self, value):
+        self._selected_license = value
+        self._logger.info(f"License model updated to: {value}")
+
+    # Function to remove yaml style deployment
+    def remove_yaml_deployment(self, progress, task):
+        # Number of tasks = 4
+        SLEEP_TIMER = 5
+        if "role" not in self._operator_details:
+            role = None
+        else:
+            if self._operator_details["role"]:
+                role = self._operator_details["role"]
+            else:
+                role = None
+
+        if "rolebinding" not in self._operator_details:
+            rolebinding = None
+        else:
+            if self._operator_details["rolebinding"]:
+                rolebinding = self._operator_details["rolebinding"]
+            else:
+                rolebinding = None
+
+        if "service_account" not in self._operator_details:
+            service_account = None
+        else:
+            if self._operator_details["service_account"]:
+                service_account = self._operator_details["service_account"]
+            else:
+                service_account = None
+
+        progress.log(Panel.fit("Starting IBM Content Assistant Operator YAML Deployment Cleanup", style="cyan"))
+        progress.log()
+        self._logger.info(f"Starting clean-up of IBM Content Assistant Operator YAML Deployment.")
+        try:
+            progress.log()
+            progress.log("Deleting Operator Deployment...")
+            self._logger.info(f"Deleting Operator deployment.")
+            self._kube.delete_operator_deployment(namespace=self._namespace)
+            sleep(SLEEP_TIMER)
+            progress.advance(task)
+
+            progress.log()
+            progress.log("Deleting Operator RoleBinding...")
+            self._logger.info(f"Deleting Operator role-binding.")
+            if rolebinding:
+                self._kube.delete_role_binding(namespace=self._namespace, name=rolebinding)
+            else:
+                progress.log()
+                progress.log(Panel.fit("Rolebinding not found", style="bold red"))
+                self._logger.info(f"Rolebinding: {rolebinding} not found.")
+            sleep(SLEEP_TIMER)
+            progress.advance(task)
+
+            progress.log()
+            progress.log("Deleting Operator Role...")
+            self._logger.info(f"Deleting Operator role.")
+            if role:
+                self._kube.delete_role(namespace=self._namespace, name=role)
+            else:
+                progress.log()
+                progress.log(Panel.fit("Role not found", style="bold red"))
+                self._logger.info(f"Role: {role} not found.")
+            sleep(SLEEP_TIMER)
+            progress.advance(task)
+
+            progress.log()
+            progress.log("Deleting Operator Service Account...")
+            self._logger.info(f"Deleting Operator service account.")
+            if service_account:
+                self._kube.delete_service_account(namespace=self._namespace, name=service_account)
+            else:
+                progress.log()
+                progress.log(Panel.fit("Service Account not found", style="bold red"))
+                self._logger.info(f"Service Account: {service_account} not found.")
+            sleep(SLEEP_TIMER)
+            progress.advance(task)
+
+            progress.log(Panel.fit("IBM Content Assistant Operator YAML Deployment Cleanup Completed", style="bold green"))
+            progress.log()
+            self._logger.info(f"Completed clean up of IBM Content Assistant Operator YAML Deployment")
+
+        except Exception as e:
+            progress.log(Text(f"Error occurred while removing the resources: {e}", style="bold red"))
+            self._logger.info(f"Error occurred while removing the resources: {e}")
 
     def apply_cncf(self, progress, task):
         try:
@@ -265,11 +378,12 @@ class Upgrade:
 
             retries = 0
             catalogsource_name = "ibm-content-assistant-operator-catalog"
-            progress.log(f"Waiting for IBM Content Assistant Content Manager Operator Catalog Pod to start")
+            progress.log(f"Waiting for IBM Content Assistant Operator Catalog Pod to start")
             progress.log()
-            self._logger.info(f"Waiting for IBM Content Assistant Content Manager Operator Catalog Pod to start")
+            self._logger.info(f"Waiting for IBM Content Assistant Operator Catalog Pod to start")
             while retries < 80:
-                catalog_ready = self._kube.check_catalogsource_rollout_status(catalogsource_name, self._catalog_namespace)
+                catalog_ready = self._kube.check_catalogsource_rollout_status(catalogsource_name,
+                                                                              self._catalog_namespace)
 
                 if catalog_ready:
                     progress.log(
@@ -278,7 +392,7 @@ class Upgrade:
                     break
                 else:
                     retries = retries + 1
-                    progress.log(f"IBM Content Assistant Catalog deployment in progress ({retries + 1}/40) ")
+                    progress.log(f"IBM Content Assistant Operator deployment in progress ({retries + 1}/40) ")
                     progress.log()
                     sleep(5)
 
@@ -347,7 +461,7 @@ class Upgrade:
                     break
                 else:
                     retries = retries + 1
-                    progress.log(f"IBM IBM Content Assistant Operator upgrade in progress ({retries + 1}/40) ")
+                    progress.log(f"IBM Content Assistant Operator upgrade in progress ({retries + 1}/40) ")
                     progress.log()
                     sleep(15)
 
@@ -360,7 +474,7 @@ class Upgrade:
                 progress.log("Please check the status of Pod by issuing the below command:")
                 progress.log()
                 progress.log(Syntax(
-                    f"kubectl describe pod $(kubectl get pods -n {self._namespace} -l 'name=ibm-content-assistant-operator' | awk '{{print $1}}') -n ${self._namespace}",
+                    f"kubectl describe pod $(kubectl get pods -n {self._namespace} -l 'name=ibm-content-assistant-operator' | awk '{{print $1}}') -n {self._namespace}",
                     "bash"))
                 exit()
 
@@ -383,9 +497,11 @@ class Upgrade:
         self._logger.info(f"Scaling down older operator pod prior to the upgrade")
 
         # Scale down older operator pod before upgrading
-        operator_deployment = self._operator_details["deployment"]
-        self._kube.scale_operator_deployment(namespace=self._namespace, deployment_name=operator_deployment,
-                                             scale="down")
+        # If moving from Yaml deployment, the deployment will not exist
+        if not self.remove_yaml:
+            operator_deployment = self._operator_details["deployment"]
+            self._kube.scale_operator_deployment(namespace=self._namespace, deployment_name=operator_deployment,
+                                                 scale="down")
 
         progress.log(f"Applying/Patching Subscription")
         progress.log()
@@ -428,15 +544,28 @@ class Upgrade:
         self._logger.info(f"Starting IBM Content Assistant Operator Upgrade")
 
         shutil.copy(self.required_file_paths["operator.yaml"], self.tmp_file_paths["operator.yaml"])
+        with open(self.tmp_file_paths["operator.yaml"], 'r') as file:
+            content = file.read()
+
+        progress.log("Setting license acceptance to 'accept' in the operator file")
+        progress.log()
+        self._logger.info(f"Setting license acceptance to 'accept' in the operator file")
+
+        # Update the 'cas_license' value to 'accept' if present in the operator file
+        content = re.sub(r'cas_license:\n  value:.*', 'cas_license:\n  value: accept', content)
+
+        # Write the modified content back to the temporary operator file
+        with open(self.tmp_file_paths["operator.yaml"], 'w') as file:
+            file.write(content)
 
         with open(self.tmp_file_paths["operator.yaml"], 'r') as file:
             content = file.read()
         registry_in_file = "icr.io"
 
         if self._setup.private_registry_valid:
-            progress.log("IBM IBM Content Assistant Operator is being upgraded using a private registry")
+            progress.log("IBM Content Assistant Operator is being upgraded using a private registry")
             progress.log()
-            self._logger.info(f"FileNet Content Management Operator is being upgraded using a private registry")
+            self._logger.info(f"IBM Content Assistant Operator is being upgraded using a private registry")
             pattern = re.compile(re.escape(registry_in_file) + r'\b')
             replacement = self._setup.private_registry_full_server
             content = pattern.sub(replacement, content)
@@ -445,24 +574,24 @@ class Upgrade:
             with open(self.tmp_file_paths["operator.yaml"], 'w') as file:
                 file.write(content)
         else:
-            progress.log("IBM Content Assistant Content Operator is being upgraded using the IBM Entitlement Registry")
+            progress.log("IBM Content Assistant Operator is being upgraded using the IBM Entitlement Registry")
             progress.log()
-            self._logger.info(f"FileNet Content Management Operator is being upgraded using the IBM Entitlement Registry")
+            self._logger.info(f"IBM Content Assistant Operator is being upgraded using the IBM Entitlement Registry")
             if self._setup.runtime_mode == "dev":
                 progress.log("Using dev registry for IBM Content Assistant Operator upgrade")
                 progress.log()
-                self._logger.info(f"Using dev registry for FileNet Content Management Operator upgrade")
+                self._logger.info(f"Using dev registry for IBM Content Assistant Operator upgrade")
                 pattern = re.compile(re.escape(registry_in_file + '/cpopen') + r'\b')
-                replacement = "cp.stg.icr.io" + '/cp'
+                replacement = "preprod.icr.io" + '/cpopen'
                 content = pattern.sub(replacement, content)
 
                 # Write the modified content back to the temporary operator file
                 with open(self.tmp_file_paths["operator.yaml"], 'w') as file:
                     file.write(content)
 
-        progress.log(f"Applying/Patching FileNet Operator Deployment")
+        progress.log(f"Applying/Patching IBM Content Assistant Operator Deployment")
         progress.log()
-        self._logger.info(f"Applying/Patching FileNet Operator Deployment")
+        self._logger.info(f"Applying/Patching IBM Content Assistant Operator Deployment")
 
         self._kube.apply_cluster_resource_files(
             resource_file=self.tmp_file_paths["operator.yaml"], resource_type="Deployment",
@@ -534,7 +663,7 @@ class Upgrade:
             return False
         
         # Create folder for network policies if it does not exist
-        self._networkwork_policy_save_location = os.path.join(os.getcwd(), "CASUpgrade", "NetworkPolicies")
+        self._networkwork_policy_save_location = os.path.join(os.getcwd(), "CASUpgrade", self._namespace, "NetworkPolicies")
         if not os.path.exists(self._networkwork_policy_save_location):
             os.makedirs(self._networkwork_policy_save_location)
 
@@ -571,177 +700,140 @@ class Upgrade:
         except Exception as e:
             self._logger.info("Unable to retrieve network policies, caught %s Skipping...", e)
 
+    def update_network_policy(self, progress):
+        resource_type_dict = self._kube.resource_type_dict
+        try:
+            progress.log()
+            progress.log(Panel.fit("Starting Network Policy Patch", style="cyan"))
+            progress.log()
+            self._logger.info(f"Starting Network Policy Patch")
+
+            for network_policy in resource_type_dict["network_policy"]:
+                self._kube.remove_network_policy_owner_reference(progress= progress,network_policy_name= network_policy,namespace= self._namespace)
+            if resource_type_dict["network_policy"] :
+                progress.log(Panel.fit("Network Policy Information Collection Completed", style="bold green"))
+                progress.log(Panel.fit("Owner references for existing Network policy has been removed", style="bold green"))
+                progress.log()
+                self._logger.info(f"All network policy information is collected and owner references for existing network policies have been removed.")
+            else:
+                progress.log(Panel.fit("There exists no network policy managed by the IBM Content Assistant Operator", style="bold green"))
+                progress.log()
+                self._logger.info(f"There exists no network policy managed by the IBM Content Assistant Operator")
+        except Exception as e:
+            self._logger.info("Unable to retrieve network policies, caught %s Skipping...", e)
+            self._logger.info(f"An error occured while retrieving the network policies: {e}")
+
+    def remove_custom_ssl_secrets(self, progress):
+        resource_type_dict = self._kube.resource_type_dict
+        try:
+
+            cr_name = self._cr_details["name"]
+
+            secrets = [
+                f"{cr_name}-cas-custom-ssl-secret",
+            ]
+
+            if 'secret' in resource_type_dict:
+                progress.log()
+                progress.log(Panel.fit("Starting Custom SSL Certificates Patch", style="cyan"))
+                progress.log()
+                self._logger.info(f"Patching custom ssl certificates")
+                for secret in secrets:
+                    if secret in resource_type_dict["secret"]:
+                        self._kube.delete_secret(namespace=self._namespace, name=secret )
+                        progress.log(f"Secret '{secret}' patched successfully.")
+                        progress.log()
+                        self._logger.info(f"Secret '{secret}' patched successfully.")
+                
+                progress.log(Panel.fit("Custom SSL Certificates Patch Completed", style="bold green"))
+                progress.log()
+                self._logger.info(f"Completed patching of custom ssl certificates")
+        
+        except Exception as e:
+            self._logger.info(f"Unable to retrieve secrets: {e}")
+        
+
+
     # Function to update certain CR parameters , used in the upgrade script
     def update_cr_values(self):
         """
-        Updates the current Custom Resource (CR) values based on the Full Custom Resource Template.
+        Updates the current CASCluster Custom Resource values based on the full CR template.
 
-        This function reads the Full Custom Resource Template and updates the current CR with the latest values.
-        It handles various aspects such as release, appVersion, image tags, resource requests and limits,
-        and initialization/verification fields.
-
-        Parameters:
-        self (object): An instance of the class containing necessary attributes and methods.
+        Applies the new release label, appVersion, removes pinned image tags so the operator
+        uses its built-in digest defaults, refreshes resource requests/limits, strips the
+        live-cluster status field, and sets the license model.
 
         Returns:
-        tuple: A tuple containing the updated CR details and a list of updates made.
+            tuple: (updated_cr_details, list_of_updates) or ({},) on fatal error.
         """
         try:
-            self._logger.info(f"Updating parameters in the current CR with latest values")
             cr_details = self._current_cr.copy()
             fc_template_cr = self.required_file_paths["ibm_content_assistant_full_cr.yaml"]
             update_list = []
 
             try:
-                # Get the Full Custom Resource Template for updated release
-                self._logger.info(f"Gettin full CR template for the current release")
                 with open(fc_template_cr, 'r') as yaml_file:
                     fc_template_cr_details = yaml.safe_load(yaml_file)
-            except Exception as e:
-                self._logger.exception('Unable to load Full Custom Resource Template', e)
+            except Exception:
+                self._logger.exception('Unable to load Full Custom Resource Template')
+                return {}
 
-            # TODO: Check for "int" type resource values and update to string
-            # Update release
-            self._logger.info(f"Updating release label")
+            # Update release label
             if is_key_present(dictionary=cr_details, key="release"):
-                release = fc_template_cr_details["metadata"]["labels"][
-                    "release"]
+                release = fc_template_cr_details["metadata"]["labels"]["release"]
                 cr_details["metadata"]["labels"]["release"] = release
                 update_list.append(f"Updated release label to {release}")
 
-            # Update AppVersion
-            self._logger.info(f"Updating release appVersion and license")
+            # Update appVersion
             if is_key_present(dictionary=cr_details, key="appVersion"):
-                if cr_details["spec"]["appVersion"] == "21.0.3":
-                    cr_details["spec"]["license"] = {}
-                    cr_details["spec"]["license"]["accept"] = True
-                    update_list.append("Updated license field to new format")
                 app_version = fc_template_cr_details["spec"]["appVersion"]
                 cr_details["spec"]["appVersion"] = app_version
                 update_list.append(f"Updated appVersion to {app_version}")
 
-            # Remove the image tags if present in the CR
-            self._logger.info(f"Removing image tags")
+            # Remove image tags so the operator falls back to its built-in digest defaults
             if is_key_present(cr_details, "tag"):
-                key_results = find_keys_and_structures(dictionary=cr_details, key="tag")
-                self._logger.info(key_results)
-                for nested_structure, path, key in key_results:
+                for nested_structure, path, key in find_keys_and_structures(dictionary=cr_details, key="tag"):
                     try:
                         delete_key_by_path(cr_details, path, key, logger=self._logger)
                     except KeyError as e:
                         self._logger.info(e)
-                update_list.append("Removed older tag")
-            
-            # Check if component boolean list exists 
-            self._logger.info(f"Updating component list")
-            if not is_key_present(cr_details, key="content_optional_components"):
-                self._logger.info("No content_optional_components found in custom resource file")
-                # Copy entire component boolean structure 
-                component_boolean = fc_template_cr_details['spec']["content_optional_components"].copy()
-                self._logger.info("Add new structure and updating all components to false")
-                # Update boolean list to false
-                component_list = ['cpe', 'graphql', "cmis", "css", "es", "tm", "ban", "iccsap", "ier"]
-                for component in component_list:
-                    component_boolean[component] = False
+                update_list.append("Removed image tags (operator digest defaults will be used)")
 
-                cr_details["spec"]["content_optional_components"] = component_boolean
-
-            # Convert pattern into boolean list
-            if is_key_present(cr_details, key="sc_deployment_patterns"):
-                self._logger.info("Converting deployment pattern")
-                if cr_details["spec"]["shared_configuration"]["sc_deployment_patterns"].lower() == "content":
-                    component_list = ['cpe', 'graphql', "ban"]
-                    for component in component_list:
-                        cr_details["spec"]["content_optional_components"][component] = True
-                    cr_details["spec"]["shared_configuration"].pop("sc_deployment_patterns")
-                update_list.append("Updated content pattern to new format")
-            
-            # Convert optional component list to boolean list 
-            if is_key_present(cr_details, key="sc_optional_components"):
-                self._logger.info("Converting optional component list")
-                component_string = cr_details["spec"]["shared_configuration"]["sc_optional_components"]
-                # Split string into list 
-                component_list = component_string.split(",")
-                for component in component_list:
-                    if component in cr_details["spec"]["content_optional_components"]:
-                        cr_details["spec"]["content_optional_components"][component] = True
-                cr_details["spec"]["shared_configuration"].pop("sc_optional_components")
-                update_list.append("Updated optional components to new format")
-                
-
-            # Update resource requests and limits
-            # TODO: Make sure limits are higher than currently listed
-            self._logger.info(f"Updated component resource requests and limits")
+            # Update resource requests and limits to match new release template values
             if is_key_present(cr_details, key="requests") and is_key_present(cr_details, key="limits"):
                 update_list.append("Updated component resource requests and limits")
-                resources_results = find_keys_and_structures(dictionary=cr_details, key="requests")
-                for nested_structure, path, key in resources_results:
+                for nested_structure, path, _key in find_keys_and_structures(dictionary=cr_details, key="requests"):
                     try:
                         update_value_by_path(dictionary1=cr_details, path=path,
                                              dictionary2=fc_template_cr_details,
                                              requests=True, logger=self._logger)
-                    except KeyError as e:
+                    except (KeyError, Exception) as e:
                         self._logger.info(e)
-                    except Exception as e:
-                        self._logger.info(e)
-
-                limits_results = find_keys_and_structures(dictionary=cr_details, key="limits")
-                for nested_structure, path, key in limits_results:
+                for nested_structure, path, _key in find_keys_and_structures(dictionary=cr_details, key="limits"):
                     try:
                         update_value_by_path(dictionary1=cr_details, path=path,
                                              dictionary2=fc_template_cr_details,
                                              limits=True, logger=self._logger)
                     except KeyError as e:
                         self._logger.info(e)
-            try:
-                if self._version_details["version"] == "5.7.0" and is_key_present(cr_details, key="sc_restricted_internet_access"):
-                    if cr_details["spec"]["shared_configuration"]["sc_egress_configuration"]["sc_restricted_internet_access"]:
-                        update_list.append("Enabled sc_generate_sample_network_policies")
-                        cr_details["spec"]["shared_configuration"]["sc_generate_sample_network_policies"] = True
-            except Exception as e:
-                self._logger.exception(
-                    f"Exception while enabling sc_generate_sample_network_policies", e)
 
-            # Disable init and verify
-            # Takes into account the OLM and script format
-            self._logger.info(f"Disabling initialization and verification")
-            try:
-                if is_key_present(cr_details, key="olm_sc_content_initialization"):
-                    update_list.append("Disabled Content Initialization")
-                    cr_details["spec"]["shared_configuration"]["olm_sc_content_initialization"] = False
-                elif is_key_present(cr_details, key="sc_content_initialization"):
-                    cr_details["spec"]["shared_configuration"]["sc_content_initialization"] = False
-                    update_list.append("Disabled Content Initialization")
-
-                if is_key_present(cr_details, key="olm_sc_content_verification"):
-                    cr_details["spec"]["shared_configuration"]["olm_sc_content_verification"] = False
-                    update_list.append("Disabled Content Verification")
-                elif is_key_present(cr_details, key="sc_content_verification"):
-                    cr_details["spec"]["shared_configuration"]["sc_content_verification"] = False
-                    update_list.append("Disabled Content Verification")
-
-                if not is_key_present(cr_details, key="scim_configuration"):
-                    if is_key_present(cr_details, key="initialize_configuration"):
-                        cr_details["spec"].pop("initialize_configuration")
-                        update_list.append("Removed initialize_configuration section")
-                if is_key_present(cr_details, key="verify_configuration"):
-                    cr_details["spec"].pop("verify_configuration")
-                    update_list.append("Removed verify_configuration section")
-
-            except Exception as e:
-                self._logger.exception(
-                    "Exception while updating the initialization and verification fields and sections", e)
-
-            # Removing the existing resource version and uid
-            self._logger.info(f"Removing exisitng status field")
+            # Remove live-cluster status field — must not be re-applied
             if is_key_present(cr_details, key="status"):
-                update_list.append("Removed status field")
                 cr_details.pop("status")
+                update_list.append("Removed status field")
+
+            # Update license model (Content Assistant field: sc_cas_license_type)
+            if self._selected_license:
+                if "shared_configuration" in cr_details.get("spec", {}):
+                    cr_details["spec"]["shared_configuration"]["sc_cas_license_type"] = self._selected_license
+                    update_list.append(f"Updated license model to {self._selected_license}")
+                else:
+                    self._logger.warning("shared_configuration not found in CR, cannot update license model")
 
             return cr_details, update_list
 
-        except Exception as e:
-            self._logger.exception("Exception while updating Custom Resource fields and sections", e)
+        except Exception:
+            self._logger.exception("Exception while updating Custom Resource fields and sections")
             return {}
 
     # Function to prepare the upgrade CR and save it in the .tmp folder
@@ -757,13 +849,14 @@ class Upgrade:
         None
         """
 
+        self._logger.info(f"Preparing for upgrade")
         self._current_cr = self._kube.get_deployment_cr(
             namespace=self._namespace, logger=self._logger)
         if not self._current_cr:
             self._logger.info(
                 "Error will retrieving Custom Resource File. This Means either the namespace entered was incorrect or a custom resource file does not exist\n"
                 "Run the script without the deployment flag if no Custom Resource file exists\n")
-            print(Panel.fit("Unable to retrieve IBM Content Assistant Custom Resource file.\n"
+            print(Panel.fit("Unable to retrieve Content Assistant Custom Resource file.\n"
                             "Please check your namespace or CR type \"CASCluster\"", style="bold red"))
             print()
             exit(1)
@@ -778,13 +871,13 @@ class Upgrade:
                 os.mkdir(os.path.join(os.getcwd(), "backups"))
             now = datetime.now()
             dt_string = now.strftime("%Y-%m-%d_%H-%M")
-            zip_folder(os.path.join(os.getcwd(), "backups", "CASUpgrade" + dt_string),
-                       os.path.join(os.getcwd(), "CASUpgrade"))
+            zip_folder(os.path.join(os.getcwd(), "backups", f"CASUpgrade_{self._namespace}_{dt_string}"),
+                       self._download_location)
             shutil.rmtree(self._download_location)
             os.makedirs(self._download_location)
             os.makedirs(self._cr_template_save_location)
         else:
-            self._logger.info("Creating CASUpgrade folder")
+            self._logger.info(f"Creating CASUpgrade/{self._namespace} folder")
             os.makedirs(self._download_location)
             os.makedirs(self._cr_template_save_location)
 
@@ -801,9 +894,11 @@ class Upgrade:
                                                                f"cas_{upgrade_version}_cr.yaml")
 
         # Writing the current cr to a file
+        self._logger.info(f"Writing the current cr to {self._current_cr_template_save_location}")
         write_yaml_to_file(self._current_cr, self._current_cr_template_save_location)
 
         # Generate the updated CR
+        self._logger.info(f"Generating the updated cr at: {self._updated_cr_template_save_location}")
         updated_cr, update_list = self.update_cr_values()
 
         self._updates_list = update_list
@@ -811,15 +906,85 @@ class Upgrade:
         # writing the data to a file
         write_yaml_to_file(updated_cr, self._updated_cr_template_save_location)
 
+        # Generate metrics YAMLs for deployed components
+        self._generate_metrics_yamls(updated_cr)
+
+    def _generate_metrics_yamls(self, cr_data):
+        """
+        Generate the ICA GenAI usage metering metrics YAML file.
+
+        Generates the IBMServiceMeterDefinition for the GenAI deployment and writes
+        it to the CASUpgrade/Metrics folder for application during the upgrade process.
+
+        Args:
+            cr_data: The Custom Resource dictionary (unused, kept for signature consistency)
+        """
+        try:
+            self._logger.info("Generating ICA GenAI usage metering metrics")
+
+            # Create Metrics folder if it doesn't exist
+            if not os.path.exists(self._metrics_save_location):
+                os.makedirs(self._metrics_save_location)
+                self._logger.info(f"Created metrics folder: {self._metrics_save_location}")
+
+            # GENAI metrics are always generated for ICA deployments
+            deployment_properties = {'GENAI': True}
+
+            # Initialize the metrics generator
+            metrics_generator = GenerateMetrics(
+                deployment_properties=deployment_properties,
+                namespace=self._namespace,
+                logger=self._logger
+            )
+
+            # Override the generated folder to use CASUpgrade/Metrics instead of generatedFiles
+            metrics_generator._generated_folder = Path(self._metrics_save_location)
+
+            # Generate the GENAI metrics
+            success = metrics_generator.generate_component_metrics("GENAI")
+            
+            if success:
+                self._logger.info(f"✓ Successfully generated metrics YAMLs in CASUpgrade/{self._namespace}/Metrics folder")
+                print()
+                print(Panel.fit(
+                    "[bold green]✓ Metrics YAMLs Generated[/bold green]\n\n"
+                    f"Usage metering metrics have been generated in:\n"
+                    f"[cyan]{self._metrics_save_location}[/cyan]\n\n"
+                    "These metrics will be applied during the upgrade process.",
+                    border_style="green"
+                ))
+            else:
+                self._logger.warning("⚠ Some metrics failed to generate, check logs for details")
+                print()
+                print(Panel.fit(
+                    "[bold yellow]⚠ Metrics Generation Warning[/bold yellow]\n\n"
+                    "Some metrics YAMLs may not have been generated.\n"
+                    "Check the logs for details.",
+                    border_style="yellow"
+                ))
+                
+        except Exception as e:
+            self._logger.error(f"Error generating metrics YAMLs: {str(e)}")
+            print()
+            print(Panel.fit(
+                f"[bold red]✗ Metrics Generation Error[/bold red]\n\n"
+                f"Failed to generate metrics YAMLs: {str(e)}\n\n"
+                "The upgrade can continue, but metrics may need to be generated manually.",
+                border_style="red"
+            ))
+
     # logic to scale down and wait for pods replica count to be zero
     # additional logic is there to scale up the pods if required which can be done using scale="up"
     def scale_pods(self, scale="down", progress=None):
+        """
+        Scale down deployments before upgrade.
+        
+        Note: This method is called from apply_upgraded_cr() which handles the UI display.
+        No UI output is needed here as it's part of the larger upgrade flow.
+        """
         try:
-
             upgrade_version = self._version_details["version"]
-
-            progress.log()
-            progress.log(Panel.fit("Scaling down IBM Content Assistant Deployments", style="green"))
+            
             self._logger.info(f"Scaling down IBM Content Assistant Deployments")
 
             cr_name = self._cr_details["name"]
@@ -827,40 +992,258 @@ class Upgrade:
                 namespace=self._namespace,
                 owner_reference_name=cr_name)
 
-            progress.log()
-            progress.log(f"Scaling down current IBM Content Assistant Operator pod before upgrading")
             self._logger.info(f"Scaling down current IBM Content Assistant Operator pod before upgrading")
 
-            # Scale down older operator pod before upgrading
-            operator_deployment = self._operator_details["deployment"]
-            self._kube.scale_operator_deployment(namespace=self._namespace,
-                                                 deployment_name=operator_deployment,
-                                                 scale="down")
+            # Scale down older operator pod before upgrading (if deployment info is available)
+            if "deployment" in self._operator_details and self._operator_details["deployment"]:
+                operator_deployment = self._operator_details["deployment"]
+                self._kube.scale_operator_deployment(namespace=self._namespace,
+                                                     deployment_name=operator_deployment,
+                                                     scale="down")
+                self._logger.info(f"Successfully scaled down operator deployment: {operator_deployment}")
+            else:
+                self._logger.warning("Operator deployment information not available, skipping scale down")
 
+        except KeyError as e:
+            self._logger.error(f"Missing required key in operator details: {e}")
+            raise
         except Exception as e:
-            progress.log()
-            progress.log(
-                Text(f"Error in scaling down pods function - {e}", style="bold red"))
-            self._logger.info(f"Error in scaling down pods function - {e}")
+            self._logger.error(f"Error in scaling down pods function: {e}")
+            raise
 
     # Ask if the CR should be updated, if user does not want to update CR we will just update the Operators
     # IF CR is to be updated then we will scale pods down , apply the latest CR and then upgrade the operator
     def apply_upgraded_cr(self, progress=None):
-        progress.log()
-        progress.log(Panel.fit("Applying Upgraded IBM Content Assistant Custom Resource", style="cyan"))
-        self._logger.info(f"Applying Upgraded IBM Content Assistant Custom Resource")
-        cr_applied = self._kube.apply_cluster_resource_files(
-            resource_file=self._updated_cr_template_save_location, resource_type="Custom Resource",
-            namespace=self._namespace)
-        if not cr_applied:
-            progress.log()
-            progress.log(Text("Error occurred while applying the upgraded Custom Resource", style="bold red"))
-            self._logger.info(f"Error occurred while applying the upgraded Custom Resource")
+        """
+        Apply the upgraded Custom Resource with table-based progress tracking.
+
+        Applies the upgraded CR to the cluster and then applies any generated
+        metrics YAMLs.  Uses a live-updating table for status feedback.
+
+        Args:
+            progress: Optional progress tracker (not used, kept for compatibility)
+        """
+        from rich.live import Live
+        from rich.table import Table
+        from rich.text import Text
+        from threading import Lock
+
+        self._logger.info("Applying Upgraded Custom Resource")
+
+        # Only the two real operations are tracked
+        application_status = {
+            "Applying Custom Resource": {"status": "⏳ Pending", "details": ""},
+        }
+        status_lock = Lock()
+
+        def create_status_table():
+            table = Table(
+                title="📦 Applying Upgraded Custom Resource",
+                show_header=True,
+                header_style="bold cyan",
+                border_style="cyan",
+                title_style="bold cyan"
+            )
+            table.add_column("Application Phase", style="cyan", width=35)
+            table.add_column("Status", style="white", width=20)
+            table.add_column("Details", style="white", width=40)
+
+            for phase, info in application_status.items():
+                status = info["status"]
+                details = info["details"]
+
+                if "✓" in status:
+                    style = "green"
+                elif "🔄" in status:
+                    style = "yellow"
+                elif "✗" in status:
+                    style = "red"
+                else:
+                    style = "dim white"
+
+                table.add_row(
+                    phase,
+                    Text(status, style=style),
+                    Text(details, style="dim white" if not details else "white")
+                )
+            return table
+
+        error_occurred = False
+        error_message = ""
+
+        print()
+        with Live(create_status_table(), console=self._console, refresh_per_second=4) as live:
+            # Apply Custom Resource
+            with status_lock:
+                application_status["Applying Custom Resource"]["status"] = "🔄 Applying..."
+                application_status["Applying Custom Resource"]["details"] = "Applying Custom Resource to cluster"
+                live.update(create_status_table())
+
+            cr_applied = self._kube.apply_cluster_resource_files(
+                resource_file=self._updated_cr_template_save_location,
+                resource_type="Custom Resource",
+                namespace=self._namespace
+            )
+
+            if cr_applied:
+                with status_lock:
+                    application_status["Applying Custom Resource"]["status"] = "✓ Complete"
+                    application_status["Applying Custom Resource"]["details"] = "Custom Resource applied successfully"
+                    live.update(create_status_table())
+                self._logger.info("Upgraded Custom Resource applied successfully")
+            else:
+                error_message = "Failed to apply Custom Resource"
+                with status_lock:
+                    application_status["Applying Custom Resource"]["status"] = "✗ Error"
+                    application_status["Applying Custom Resource"]["details"] = f"Error: {error_message}"
+                    live.update(create_status_table())
+                error_occurred = True
+                self._logger.error(f"Error occurred while applying the upgraded Custom Resource: {error_message}")
+
+        if error_occurred:
+            print()
+            print(Text(f"✗ {error_message}", style="bold red"))
             exit(1)
-        else:
-            progress.log()
-            progress.log(Text("Upgraded Custom Resource applied successfully", style="bold green"))
-            self._logger.info(f"Upgraded Custom Resource applied successfully")
+
+        print()
+        print(Text("✓ Upgraded Custom Resource applied successfully", style="bold green"))
+
+        # Apply metrics YAMLs if they exist
+        self._apply_metrics_yamls()
+
+    def _apply_metrics_yamls(self):
+        """
+        Apply usage metering metrics YAML files with table-based progress tracking.
+        
+        This method checks for metrics files in the CASUpgrade/<namespace>/Metrics folder and applies
+        them to the cluster with a live-updating table similar to the mustgather UI.
+        """
+        from rich.live import Live
+        from rich.table import Table
+        from rich.text import Text
+        from threading import Lock
+        
+        try:
+            # Check if metrics folder exists and has files
+            if not os.path.exists(self._metrics_save_location):
+                self._logger.info("No metrics folder found, skipping metrics deployment")
+                return
+            
+            metrics_files = [f for f in os.listdir(self._metrics_save_location)
+                           if f.endswith('.yaml') or f.endswith('.yml')]
+            
+            if not metrics_files:
+                self._logger.info("No metrics files found, skipping metrics deployment")
+                return
+            
+            self._logger.info(f"Applying {len(metrics_files)} metrics YAML(s)")
+            
+            # Initialize status tracking for each metrics file
+            metrics_status = {}
+            for metrics_file in metrics_files:
+                # Extract component name for display
+                component_name = metrics_file.replace('ccx-', '').replace('-metrics.yaml', '').upper()
+                metrics_status[component_name] = {"status": "⏳ Pending", "details": ""}
+            
+            status_lock = Lock()
+            
+            def create_metrics_table():
+                """Create a fresh status table with current metrics application status"""
+                table = Table(
+                    title="📊 Applying Usage Metering Metrics",
+                    show_header=True,
+                    header_style="bold cyan",
+                    border_style="cyan",
+                    title_style="bold cyan"
+                )
+                table.add_column("Metrics Component", style="cyan", width=25)
+                table.add_column("Status", style="white", width=20)
+                table.add_column("Details", style="white", width=50)
+                
+                for component, info in metrics_status.items():
+                    status = info["status"]
+                    details = info["details"]
+                    
+                    if "Complete" in status or "✓" in status:
+                        style = "green"
+                    elif "Applying" in status or "🔄" in status:
+                        style = "yellow"
+                    elif "Error" in status or "✗" in status:
+                        style = "red"
+                    else:
+                        style = "dim white"
+                    
+                    table.add_row(
+                        component,
+                        Text(status, style=style),
+                        Text(details, style="dim white" if not details else "white")
+                    )
+                return table
+            
+            # Start live display
+            print()
+            with Live(create_metrics_table(), console=self._console, refresh_per_second=4) as live:
+                applied_count = 0
+                failed_count = 0
+                
+                for metrics_file in metrics_files:
+                    metrics_path = os.path.join(self._metrics_save_location, metrics_file)
+                    component_name = metrics_file.replace('ccx-', '').replace('-metrics.yaml', '').upper()
+                    
+                    # Update status to applying
+                    with status_lock:
+                        metrics_status[component_name]["status"] = "🔄 Applying..."
+                        metrics_status[component_name]["details"] = f"Applying {metrics_file}"
+                        live.update(create_metrics_table())
+                    
+                    self._logger.info(f"Applying metrics file: {metrics_file}")
+                    
+                    try:
+                        success = self._kube.apply_cluster_resource_files(
+                            resource_file=metrics_path,
+                            resource_type="IBMServiceMeterDefinition",
+                            namespace=self._namespace
+                        )
+                        
+                        if success:
+                            applied_count += 1
+                            with status_lock:
+                                metrics_status[component_name]["status"] = "✓ Complete"
+                                metrics_status[component_name]["details"] = "Metrics applied successfully"
+                                live.update(create_metrics_table())
+                            self._logger.info(f"✓ Successfully applied {metrics_file}")
+                        else:
+                            failed_count += 1
+                            with status_lock:
+                                metrics_status[component_name]["status"] = "✗ Failed"
+                                metrics_status[component_name]["details"] = "Application returned false"
+                                live.update(create_metrics_table())
+                            self._logger.warning(f"✗ Failed to apply {metrics_file}")
+                            
+                    except Exception as e:
+                        failed_count += 1
+                        error_msg = str(e)[:45] + "..." if len(str(e)) > 45 else str(e)
+                        with status_lock:
+                            metrics_status[component_name]["status"] = "✗ Error"
+                            metrics_status[component_name]["details"] = error_msg
+                            live.update(create_metrics_table())
+                        self._logger.error(f"Error applying {metrics_file}: {str(e)}")
+            
+            # Summary message
+            print()
+            if failed_count == 0:
+                print(Text(f"✓ All {len(metrics_files)} metrics applied successfully", style="bold green"))
+                self._logger.info(f"✓ All {len(metrics_files)} metrics applied successfully")
+            else:
+                print(Text(f"⚠ Applied {applied_count}/{len(metrics_files)} metrics ({failed_count} failed)",
+                          style="bold yellow"))
+                self._logger.warning(f"⚠ Applied {applied_count}/{len(metrics_files)} metrics ({failed_count} failed)")
+                
+        except Exception as e:
+            error_msg = f"Error during metrics deployment: {str(e)}"
+            print()
+            print(Text(f"✗ {error_msg}", style="bold red"))
+            self._logger.error(error_msg)
 
     # Function to display the post upgrade steps
     # Jason to fill this up as part of the upgrade steps

@@ -213,9 +213,14 @@ class GenerateCR:
                         base_dict["spec"]["shared_configuration"]["trusted_certificate_list"].append(
                             secret_name)
 
-            base_dict["spec"]["shared_configuration"]["sc_cas_license_type"] = self._deployment_properties["LICENSE"].lower()
+            license_model = self._deployment_properties["LICENSE"].upper()
+            base_dict["spec"]["shared_configuration"]["sc_cas_license_type"] = (
+                "cp4ba" if license_model == "CP4BA" else "fncm"
+            )
             base_dict["spec"]["shared_configuration"]["storage_configuration"][
                 "sc_slow_file_storage_classname"] = self._deployment_properties["SLOW_FILE_STORAGE_CLASSNAME"]
+
+            base_dict["spec"]["shared_configuration"]["enable_fips"] = self._deployment_properties["FIPS_SUPPORT"]
 
             base_dict["spec"]["shared_configuration"]["sc_generate_sample_network_policies"] = self._deployment_properties["GENERATE_NETWORK_POLICIES"]
 

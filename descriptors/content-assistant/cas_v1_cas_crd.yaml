@@ -338,13 +338,13 @@ spec:
                       If this is not defined, all external routes will be signed with root_ca_secret.
                     type: string
                   image_pull_secrets:
-                    description: All CP4A components must use/share the image_pull_secrets
+                    description: All Content Assistant components must use/share the image_pull_secrets
                       to pull images.
                     items:
                       type: string
                     type: array
                   root_ca_secret:
-                    description: All CP4A components must use/share the root_ca_secret
+                    description: All Content Assistant components must use/share the root_ca_secret
                       in order for integration.
                     type: string
                   sc_cas_license_type:
@@ -353,7 +353,7 @@ spec:
                       The possible values are fncm or cp4ba.
                       The product license for Cloud Pak for Business Automation License can be found at https://ibm.biz/cp4ba_license_2501 (OR)
                       The product license for Cloud Pak for Business Automation Reserved License can be found at https://ibm.biz/cp4ba-reserved-license-2501
-                      The product license for FNCM Standlone license can be found at https://ibm.biz/CPE_FNCM_License_5_7_0
+                      The product license for FNCM Standalone license can be found at https://ibm.biz/CPE_FNCM_License_5_7_0
                       This parameter is required.
                     enum:
                     - fncm
@@ -371,7 +371,7 @@ spec:
                     - other
                     type: string
                   sc_deployment_profile_size:
-                    description: 'Optional: You can specify a profile size for CloudPak
+                    description: 'Optional: You can specify a profile size for Content Assistant
                       - valid values are small,medium,large,"" ("" value means the
                       default will be used) - default is small.'
                     enum:
@@ -490,6 +490,20 @@ spec:
                     items:
                       type: string
                     type: array
+                  usage_metering:
+                    description: |-
+                      UsageMeteringConfiguration holds optional tuning knobs for the GenAI usage-metering CronJob.
+                      The CronJob is always created unless Enabled is explicitly set to false.
+                    properties:
+                      enabled:
+                        description: Set to false to skip creating the usage-metering
+                          CronJob.
+                        type: boolean
+                      schedule:
+                        description: 'Cron schedule for the usage-metering job (default:
+                          "30 10 * * *").'
+                        type: string
+                    type: object
                 required:
                 - sc_cas_license_type
                 - storage_configuration
@@ -572,6 +586,11 @@ spec:
                   vector_database_url:
                     description: Vector Database URL which should include host and
                       port. Example https://<VectorDatabaseURL>:9200
+                    type: string
+                  vector_database_url_prefix:
+                    description: |-
+                      URL prefix for the Vector Database, used when OpenSearch is deployed behind a reverse proxy or under a custom base path.
+                      Maps to the OPEN_SEARCH_URL_PREFIX environment variable. Default is an empty string (root-path configuration).
                     type: string
                   vector_database_verify_certs:
                     description: Tunning parameter to your vector database

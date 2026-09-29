@@ -18,28 +18,33 @@ the default mode creates a list and uploads those images to private registry
 '''
 import logging
 import os
+import toml
 
+import questionary
+from questionary import Style
 import typer
 from click import style
 from rich import print
 from rich.console import Console
+from rich.live import Live
 from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, MofNCompleteColumn, \
     TimeElapsedColumn
-from rich.prompt import Confirm
+from rich.table import Table
 from rich.text import Text
 from typing_extensions import Annotated
 
 from helper_scripts.gather import gather as g
 from helper_scripts.gather import silent_gather as sg
 from helper_scripts.loadimages import load_extract as le
+from helper_scripts.utilities.config_models import validate_loadimages_config
 from helper_scripts.utilities.interface import clear, display_issues, display_prereq_passed, \
-    generate_loadimages_results, generate_loadimage_results, display_airgap_vars, display_manifest_results
-from helper_scripts.utilities.utilities import validate_image_details_file, prereq_checks, read_version_toml, \
-    validate_airgap_details_file
+    generate_loadimages_results, generate_loadimage_results, display_config_validation_errors, \
+    display_prereq_validation_table, display_toml_syntax_error
+from helper_scripts.utilities.utilities import validate_image_details_file, prereq_checks, read_version_toml
 
-__version__ = "3.0.0"
+__version__ = "1.4.0"
 
 app = typer.Typer()
 
@@ -51,7 +56,6 @@ state = {
     "setup": None,
     "image_details": "",
     "dryrun": False,
-    "airgap": False,
     "version_data": {},
     "tls_verify": True
 }
@@ -65,7 +69,7 @@ def setup_logger(file_log_level):
     logger.setLevel(logging.DEBUG)
 
     # Setup console logger
-    shell_handler = RichHandler()
+    shell_handler = RichHandler(show_time=False, show_path=False)
     shell_handler.setLevel(file_log_level)
     formatter_rich = logging.Formatter("%(message)s")
     shell_handler.setFormatter(formatter_rich)
@@ -90,102 +94,9 @@ def version_callback(value: bool):
         raise typer.Exit()
 
 
-def push_airgap_images():
-    load = le.LoadExtract(console, state["logger"], silent=state["silent"], dev=state["dev"], airgap=state["airgap"],
-                          folder_path=state["image_details"], version_data=state["version_data"], tls_verify=state["tls_verify"])
-
-    # Check and validate the airgap details file
-    airgap_detail_file = os.path.join(state["image_details"], "airgap_variables.sh")
-
-    airgap_vars = validate_airgap_details_file(logger=state["logger"], airgap_details_file=airgap_detail_file)
-
-    # Set the airgap variables
-    load.airgap_vars = airgap_vars
-
-    print(display_airgap_vars(airgap_vars))
-
-    if not state["silent"]:
-        print()
-        start_copy = Confirm.ask("Do you want to to proceed with Generating the Mirror Manifests?",
-                                 default=True)
-
-        if not start_copy:
-            exit(1)
-
-    print()
-    print(Panel.fit(Text("Starting Airgap Mirror Manifest Generation"), style="cyan"))
-    print()
-    state["logger"].info(f"Starting Airgap Mirror Manifest Generation")
-
-    with Progress(SpinnerColumn(),
-                  TextColumn("[progress.description]{task.description}"),
-                  BarColumn(),
-                  transient=True,
-                  console=console) as progress:
-        task1 = progress.add_task("Enable OC Mirror", total=1)
-        task2 = progress.add_task("Generating Image Mirror Manifest", total=None)
-
-        # Enable OC mirror tool
-        oc_enabled = load.enable_oc_image(progress, task1)
-
-        # Generate Mirror Manifests
-        manifest_results = load.generate_mirror_manifests(progress, task2)
-
-    if not oc_enabled:
-        print(Text("OC Mirror tool is not available. Please install the tool and try again.", style("bold red")))
-        state["logger"].info(f"OC Mirror tool is not available. Please install the tool and try again.")
-        exit(1)
-
-    if not manifest_results:
-        print(Text("Mirror manifest failed to generate. Please check error logs for more information", style("bold red")))
-        state["logger"].info(f"Mirror manifest failed to generate.")
-        exit(1)
-
-    clear(console)
-
-    # Print mirror manifests results
-    print(display_manifest_results(manifest_results))
-
-    # Check image channels
-    # Let customer select which channel to mirror
-    load.collect_image_channels()
-
-    if not state["silent"]:
-        print()
-        start_copy = Confirm.ask("Do you want to to proceed with Airgap Mirroring?",
-                                 default=True)
-
-        if not start_copy:
-            exit(1)
-    if state["dryrun"]:
-        exit()
-
-    clear(console)
-
-    print(Panel.fit("Starting IBM Content Assistant Airgap Image Mirror", style="cyan"))
-    with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TimeElapsedColumn(),
-            console=console,
-            transient=False,
-    ) as progress:
-
-        task1 = progress.add_task("[green]Airgap Setup", total=1)
-        task2 = progress.add_task("[green]Mirror Images", total=None)
-
-        while not progress.finished:
-            load.apply_image_mirror_policy(progress, task1)
-            load.mirror_images(progress, task2)
-
-
-    # print(generate_loadimage_results(load.image_push_summary))
-
-
 def push_cncf_images():
-    load = le.LoadExtract(console, state["logger"], silent=state["silent"], dev=state["dev"], airgap=state["airgap"],
-                          folder_path=state["image_details"])
+    load = le.LoadExtract(console, state["logger"], silent=state["silent"], dev=state["dev"],
+                          folder_path=state["image_details"], tls_verify=state["tls_verify"])
 
     image_detail_file = os.path.join(state["image_details"], "imageDetails.toml")
 
@@ -193,177 +104,195 @@ def push_cncf_images():
 
     load.parse_toml_file(image_details_dict=image_prop_dict)
 
-    state["setup"].collect_verify_entitlement_key()
-    state["setup"].collect_verify_private_registry()
+    if not state["silent"]:
+        state["setup"].collect_verify_entitlement_key()
+        state["setup"].collect_verify_private_registry()
+
+        # Sync TLS verification setting from interactive selection (silent mode
+        # keeps the value set at construction time from the --tls-verify flag)
+        state["tls_verify"] = state["setup"]._tls_verify
+        load._tls_verify = state["tls_verify"]
+        state["logger"].info(f"TLS verification after user selection: {state['tls_verify']}")
 
     private_registry = state["setup"].private_registry_server
+    if not private_registry:
+        state["logger"].error(
+            "Private registry is not set. "
+            "Ensure PRIVATE_REGISTRY_URL is configured in the silent install file."
+        )
+        raise SystemExit(1)
 
     load.private_registry_server = private_registry
+
+    # Forward credentials so Skopeo can authenticate at copy time.
+    # Source: IBM ICR always uses username "cp" + entitlement key as password.
+    # Destination: the private registry username/password.
+    load.src_creds = f"cp:{state['setup']._entitlement_key}"
+    load.dest_creds = f"{state['setup']._private_registry_username}:{state['setup']._private_registry_password}"
+
+    # Forward the private registry CA cert directory if configured.
+    # Skopeo --dest-cert-dir expects a directory of PEM files, so we use the
+    # directory that contains the cert file the user specified.
+    _ssl_cert = getattr(state["setup"], "_private_registry_ssl_cert", None) or ""
+    if _ssl_cert:
+        load.dest_cert_dir = os.path.dirname(os.path.abspath(_ssl_cert))
+        state["logger"].info(f"Private registry cert dir for Skopeo: {load.dest_cert_dir}")
 
     number_of_images = load.number_of_images
 
     if not state["silent"]:
         print()
-        start_copy = Confirm.ask("Do you want to to proceed with pushing the images to the private registry?",
-                                 default=True)
-
-        if not start_copy:
-            exit(1)
+        try:
+            start_copy = questionary.confirm(
+                "Do you want to proceed with pushing the images to the private registry?",
+                default=True,
+                style=Style([
+                    ('question', 'fg:cyan bold'),
+                    ('answer', 'fg:green bold')
+                ])
+            ).ask()
+            
+            if start_copy is None or not start_copy:
+                exit(1)
+        except Exception:
+            # Fallback to simple confirmation if questionary fails
+            print("[yellow]⚠ Using fallback confirmation[/yellow]")
+            if input("Proceed with pushing images to private registry? (Y/n): ").lower() in ['n', 'no']:
+                exit(1)
     if state["dryrun"]:
         exit()
 
     clear(console)
 
     print(Panel.fit("Starting IBM Content Assistant Image Push", style="cyan"))
-    with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-            console=console,
-            transient=False,
-    ) as progress:
+    state["logger"].info(f"Starting IBM Content Assistant Image Push")
+    
+    # Use new Live-based progress tracker with multi-threading
+    _interrupted = False
+    try:
+        load.copy_images_with_live_tracker()
+    except KeyboardInterrupt:
+        _interrupted = True
+        print("\n")
+        print(Panel.fit("⚠ Image copy interrupted by user", style="yellow"))
+    except Exception as e:
+        state["logger"].error(f"Error during image copy: {e}")
+        print(f"\n[red]Error during image copy: {e}[/red]")
+        raise SystemExit(1)
 
-        task1 = progress.add_task("[green]Pushing Images", total=number_of_images)
+    summary = load.image_push_summary
+    print(generate_loadimage_results(summary))
 
-        while not progress.finished:
-            load.copy_images(progress, task1)
+    failed = summary.get("failed", [])
+    if failed:
+        for name, error in failed if isinstance(failed[0], tuple) else [(f, None) for f in failed]:
+            state["logger"].error(f"Image push failure: {name}" + (f" — {error}" if error else ""))
+        state["logger"].error(f"Image push completed with {len(failed)} failure(s).")
+        raise SystemExit(1)
 
-    print(generate_loadimage_results(load.image_push_summary))
+    if _interrupted:
+        raise SystemExit(1)
 
 
 def generate_cncf_images():
-    extract = le.LoadExtract(console, state["logger"], silent=state["silent"], dev=state["dev"], airgap=state["airgap"],
+    extract = le.LoadExtract(console, state["logger"], silent=state["silent"], dev=state["dev"],
                              folder_path=state["image_details"], version_data=state["version_data"], tls_verify=state["tls_verify"])
+
+    # In dev mode the operand images use release tags that do not exist on
+    # the staging registry.  Require a sprint tag override before proceeding.
+    if state["dev"]:
+        dev_image_tag = os.environ.get("DEV_IMAGE_TAG", "")
+        if not dev_image_tag:
+            if state["silent"]:
+                state["logger"].error(
+                    "DEV_IMAGE_TAG is not set. "
+                    "Export the sprint tag before running in dev mode, "
+                    "e.g.: export DEV_IMAGE_TAG=2601.SP17"
+                )
+                raise SystemExit(1)
+            else:
+                dev_image_tag = questionary.text(
+                    "DEV_IMAGE_TAG is not set. Enter the sprint tag for operand images:",
+                    style=Style([
+                        ('question', 'fg:cyan bold'),
+                        ('answer',   'fg:green bold'),
+                    ]),
+                ).ask()
+                if not dev_image_tag:
+                    state["logger"].error("No sprint tag provided — aborting dev mode generate.")
+                    raise SystemExit(1)
+        extract.dev_image_tag = dev_image_tag
+        state["logger"].info(f"Dev mode: overriding operand tags with DEV_IMAGE_TAG={dev_image_tag}")
+
+    # Parse Content Assistant CR template for images
     extract.parse_content_template()
-    extract.parse_operator_template()
+
+    # Parse Content Assistant operator for operator images
+    if os.path.exists(extract._content_operator_path):
+        extract.parse_operator_template(extract._content_operator_path, "ibm-content-assistant-operator")
+
+    # Usage Metering operator
+    if os.path.exists(extract._usage_metering_operator_path):
+        extract.parse_operator_template(extract._usage_metering_operator_path, "ibm-usage-metering-operator")
+
     extract.create_image_details_file()
 
     layout = generate_loadimages_results(state["image_details"])
     print(layout)
 
 
-def generate_airgap_images():
-    extract = le.LoadExtract(console, state["logger"], silent=state["silent"], dev=state["dev"], airgap=state["airgap"],
-                             folder_path=state["image_details"], version_data=state["version_data"], tls_verify=state["tls_verify"])
-
-    # Determine CASE Package version to download
-    # Check if version was provided via CLI
-    casepackage_version = state.get("casepackage_version", "")
-
-    # If not, check if version was provided via version file
-    if not casepackage_version:
-        # Collect CASEPackage Version from version.toml
-        # Collect base version from version.toml
-        if state["version_data"]:
-            fncm_version = state["version_data"]["VERSION"].split('-')[0]
-            extract.fncm_version = fncm_version
-            if "CASE_VERSION" in state["version_data"]:
-                casepackage_version = state["version_data"]["CASE_VERSION"]
-
-    # If still not set, exit with error
-    if not casepackage_version:
-        print(Text("CASE Package version not specified. Please provide a version via --casepackage-version or "
-                   "in the version.toml file.", style="bold red"))
-        exit(1)
-
-    # Validate the provided CASE Package version from the index.yaml download
-    # Retrieve available CASE Package versions in a list
-    extract.collect_case_versions()
-    if extract.case_versions:
-        extract.validate_case_package_version(casepackage_version)
-
-    casepackage_version = extract.casepackage_version
-
-    extract.ibmpak_home = os.path.join(os.getcwd())
-
-    airgap_vars = {
-        "IBMPAK_HOME": extract.ibmpak_home,
-        "CASE_NAME": 'ibm-content-assistant',
-        "CASE_VERSION": casepackage_version,
-        "CASE_INVENTORY_SETUP": 'caOperatorSetup',
-    }
-
-    extract.airgap_vars = airgap_vars
-
-    if not state["silent"]:
-        print()
-        start_download = Confirm.ask("Do you want to to proceed with CASE Package Download?",
-                                 default=True)
-
-        if not start_download:
-            exit(1)
-
-    if not state["dryrun"]:
-        # Download CASE Package
-        case_output = extract.download_case()
-        clear(console)
-        print(case_output)
-
-    # Check podman availability
-    podman = state["setup"].podman_available
-
-    # Check if XDG_RUNTIME_DIR is set
-    # This is needed to be defined before login
-    if not podman:
-        registry_auth = os.path.join(os.environ.get("HOME"), ".docker", "config.json")
-    else:
-        if os.environ.get("XDG_RUNTIME_DIR"):
-            registry_auth = os.path.join(os.environ.get("XDG_RUNTIME_DIR"), "containers", "auth.json")
-            extract.add_airgap_vars('XDG_RUNTIME_DIR', os.environ.get("XDG_RUNTIME_DIR"))
-        else:
-            registry_auth = os.path.join(os.getcwd(), '.ibm-pak', 'auth.json')
-
-    extract.add_airgap_vars('REGISTRY_AUTH_FILE', registry_auth)
-    os.environ['REGISTRY_AUTH_FILE'] = registry_auth
-
-    # Collect Private and Registry info
-    state["setup"].collect_verify_entitlement_key()
-    state["setup"].collect_verify_private_registry()
-
-    private_registry = state["setup"].private_registry_server
-
-    extract.private_registry_server = private_registry
-    extract.add_airgap_vars('TARGET_REGISTRY', private_registry)
-
-    # Create Airgap Details file
-    extract.create_airgap_details_file()
-
-    layout = generate_loadimages_results(state["image_details"], airgap=True)
-    print(layout)
-
-
 def display_mode_version(mode: str, description: str):
     """
-        Display the mode and version of the script.
+    Display the mode and version of the script in a modern, visually appealing format.
+    
+    Args:
+        mode: The operation mode
+        description: Description of what the script does
     """
     clear(console)
     print()
-    msg = f"Version: {__version__}\n" \
-          f"Mode: {mode}\n" \
-          f"{description}"
-
+    
+    # Create header table with version and mode info
+    header_table = Table.grid(padding=(0, 2))
+    header_table.add_column(style="cyan", justify="left")
+    header_table.add_column(style="white", justify="left")
+    
+    # Add version and mode rows
+    header_table.add_row("Version:", f"[bold green]{__version__}[/bold green]")
+    header_table.add_row("Mode:", f"[bold yellow]{mode}[/bold yellow]")
+    header_table.add_row("", f"[dim]{description}[/dim]")
+    
+    # Collect active flags
+    active_flags = []
     if state["dryrun"]:
-        msg += "\nDry Run Enabled"
-
+        active_flags.append("🔍 Dry Run")
+    
     if state["dev"]:
-        msg += "\nDevelopment Mode Enabled"
-
-    if state["airgap"]:
-        msg += "\nOpenShift Airgap Mode Enabled"
-
+        active_flags.append("🔧 Development Mode")
+    
     if state["silent"]:
-        msg += "\nSilent Mode Enabled"
-
+        active_flags.append("🤫 Silent Mode")
+    
     if state["verbose"]:
-        msg += "\nVerbose Logging Enabled"
-
+        active_flags.append("📢 Verbose Logging")
+    
     if not state["tls_verify"]:
-        msg += "\nTLS Verification Disabled for Podman Operations"
-
-    print(Panel.fit(msg, title="IBM Content Assistant Load Images CLI", border_style="green"))
+        active_flags.append("🔓 TLS Verification Disabled")
+    
+    # Add active flags if any
+    if active_flags:
+        header_table.add_row("", "")  # Empty row for spacing
+        for flag in active_flags:
+            header_table.add_row("", f"[bold magenta]{flag}[/bold magenta]")
+    
+    # Create the main panel with modern styling
+    print(Panel(
+        header_table,
+        title="[bold white]📦 IBM Content Assistant Load Images CLI[/bold white]",
+        border_style="bright_blue",
+        padding=(1, 2),
+        expand=False
+    ))
     print()
 
 
@@ -372,10 +301,7 @@ def generate():
     """
         Generate the image details file.
     """
-    if state['airgap']:
-        generate_airgap_images()
-    else:
-        generate_cncf_images()
+    generate_cncf_images()
 
 
 @app.command()
@@ -384,10 +310,7 @@ def push():
         Push images to a registry based on existing image details file.
     """
 
-    if state['airgap']:
-        push_airgap_images()
-    else:
-        push_cncf_images()
+    push_cncf_images()
 
 
 # main function
@@ -395,7 +318,7 @@ def push():
 def main(ctx: typer.Context,
          version: Annotated[bool, typer.Option(
              "--version", help="Show version and exit.",
-             callback=version_callback, is_eager=True)] = None,
+             callback=version_callback, is_eager=True)] = False,
          silent: Annotated[bool, typer.Option(
              help="Enable Silent Install (no prompts).",
              rich_help_panel="Customization and Utils")] = False,
@@ -405,15 +328,9 @@ def main(ctx: typer.Context,
          tls_verify: Annotated[bool, typer.Option(
              help="Enable TLS verification for Podman operations.",
              rich_help_panel="Customization and Utils")] = True,
-         airgap: Annotated[bool, typer.Option(
-             help="Enable OCP Airgap mode.",
-             rich_help_panel="Customization and Utils")] = False,
          dryrun: Annotated[bool, typer.Option(
              help="Perform a dry run",
              rich_help_panel="Customization and Utils")] = False,
-         casepackage_version: Annotated[str, typer.Option(
-                help="Specify CASE Package version to download (Airgap mode only).",
-                rich_help_panel="Customization and Utils")] = "",
          dev: Annotated[bool, typer.Option(hidden=True)] = False):
     """
         IBM Content Assistant Load Images CLI.
@@ -433,55 +350,101 @@ def main(ctx: typer.Context,
         state["dev"] = True
     if dryrun:
         state["dryrun"] = True
-    if airgap:
-        state["airgap"] = True
-    if casepackage_version:
-        state["casepackage_version"] = casepackage_version
-    if not tls_verify:
-        state["tls_verify"] = False
+    
+    # Set TLS verification state (explicitly set both True and False cases)
+    state["tls_verify"] = tls_verify
+    state["logger"].info(f"TLS verification is set to: {state['tls_verify']}")
 
-    if airgap:
-        state["image_details"] = os.path.join(os.getcwd(), "airgapDetails")
-    else:
-        state["image_details"] = os.path.join(os.getcwd(), "imageDetails")
+    state["image_details"] = os.path.join(os.getcwd(), "imageDetails")
 
     if not os.path.exists(state["image_details"]):
         os.mkdir(state["image_details"])
 
-    if airgap:
-        if ctx.invoked_subcommand is None:
-            display_mode_version("Airgap CASE and Image Mirror",
-                                 "Download CASE Package and Mirror Images to Private Registry")
-            checks = ["podman", 'oc', 'connection', 'ibm-pak', 'mirror']
-            files = []
+    checks = []
+    files = []
 
-        elif ctx.invoked_subcommand == "push":
-            display_mode_version("Airgap Image Mirror", "Mirror Images to Private Registry Only")
-            checks = ["podman", 'oc', 'connection', 'mirror']
-            files = []
+    if ctx.invoked_subcommand is None:
+        display_mode_version("Extract and Push Images",
+                             "Generate ImageDetails and Push images to Private Registry")
+        
+        # Display what will be done
+        info_text = Text()
+        info_text.append("This mode will:\n\n", style="bold white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Extract image details from descriptors\n", style="white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Generate image manifest file\n", style="white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Push images to private registry\n", style="white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Verify image availability\n", style="white")
+        
+        print(Panel(
+            info_text,
+            title="[bold white]📦 Image Operations[/bold white]",
+            border_style="cyan",
+            padding=(1, 2)
+        ))
+        print()
+        
+        checks = ["skopeo"]
+        files = [
+            "content-assistant/ibm_content_assistant_full_cr.yaml",
+            "content-assistant/operator.yaml",
+            "usage-metering/operator.yaml",
+        ]
 
+    elif ctx.invoked_subcommand == "push":
+        display_mode_version("Push Images", "Push Images to Private Registry Only")
+        
+        # Display what will be done
+        info_text = Text()
+        info_text.append("This mode will:\n\n", style="bold white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Read existing image manifest\n", style="white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Push images to private registry\n", style="white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Verify image availability\n", style="white")
+        
+        print(Panel(
+            info_text,
+            title="[bold white]📦 Image Operations[/bold white]",
+            border_style="cyan",
+            padding=(1, 2)
+        ))
+        print()
+        
+        checks = ["skopeo"]
+        files = []
 
-        elif ctx.invoked_subcommand == "generate":
-            display_mode_version("Airgap CASE Setup", "Download and Setup CASE Package Only")
-            checks = ["podman", 'oc', 'ibm-pak']
-            files = []
-    else:
-        if ctx.invoked_subcommand is None:
-            display_mode_version("Extract and Push Images",
-                                 "Generate ImageDetails and Push images to Private Registry")
-            checks = ["podman", "skopeo"]
-            files = ["ibm_content_assistant_full_cr.yaml"]
-
-        elif ctx.invoked_subcommand == "push":
-            display_mode_version("Push Images", "Push Images to Private Registry Only")
-            checks = ["podman", "skopeo"]
-            files = []
-
-
-        elif ctx.invoked_subcommand == "generate":
-            display_mode_version("Generate Image Detail File", "Generate Image Details File Only")
-            checks = []
-            files = ["ibm_content_assistant_full_cr.yaml"]
+    elif ctx.invoked_subcommand == "generate":
+        display_mode_version("Generate Image Detail File", "Generate Image Details File Only")
+        
+        # Display what will be done
+        info_text = Text()
+        info_text.append("This mode will:\n\n", style="bold white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Extract image details from descriptors\n", style="white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Generate image manifest file\n", style="white")
+        info_text.append("  ✓ ", style="bold green")
+        info_text.append("Save for later push operation\n", style="white")
+        
+        print(Panel(
+            info_text,
+            title="[bold white]📦 Image Operations[/bold white]",
+            border_style="cyan",
+            padding=(1, 2)
+        ))
+        print()
+        
+        checks = []
+        files = [
+            "content-assistant/ibm_content_assistant_full_cr.yaml",
+            "content-assistant/operator.yaml",
+            "usage-metering/operator.yaml",
+        ]
 
     descriptor_path = os.path.join(os.path.dirname(os.getcwd()), "descriptors")
 
@@ -497,9 +460,7 @@ def main(ctx: typer.Context,
         print(layout)
         exit(1)
     else:
-        prereq_summary = display_prereq_passed(results)
-        print(prereq_summary)
-        print()
+        display_prereq_validation_table(results)
 
     # Read Version File
     version_path = os.path.join(os.path.dirname(os.getcwd()), "version.toml")
@@ -520,15 +481,33 @@ def main(ctx: typer.Context,
     else:
         # this is the user details object which does pre-checks and collects some necessary details
         silent_path = os.path.join("silent_config", "silent_install_loadimages.toml")
+
+        # Validate configuration with Pydantic before proceeding
+        state["logger"].info(f"Validating silent load-images configuration: {silent_path}")
+        try:
+            import toml as _toml
+            with open(silent_path, 'r') as _f:
+                _config_dict = _toml.load(_f)
+            _success, _, _validation_errors = validate_loadimages_config(_config_dict)
+            if not _success:
+                print(display_config_validation_errors(_validation_errors, silent_path))
+                raise typer.Exit(code=1)
+            state["logger"].info("✓ Configuration validated successfully")
+        except FileNotFoundError:
+            print(Panel.fit(f"❌ Configuration file not found: {silent_path}", style="bold red"))
+            raise typer.Exit(code=1)
+        except typer.Exit:
+            raise
+        except toml.TomlDecodeError as _e:
+            print(display_toml_syntax_error(_e, silent_path))
+            raise typer.Exit(code=1)
+        except Exception as _e:
+            state["logger"].error(f"Unexpected error loading configuration: {str(_e)}")
+            print(Panel.fit(f"❌ Unexpected error: {str(_e)}", style="bold red"))
+            raise typer.Exit(code=1)
+
         state["setup"] = sg.SilentGatherOptions(state["logger"], silent_path, script_type="load_extract", dev=state["dev"], tls_verify=state["tls_verify"])
-        state["setup"].silent_parse_load_images_file(airgap)
-
-        # Retrieve silent version and channel selection
-        fncm_version = state["setup"].fncm_version
-        all_channels = state["setup"].all_channels
-
-        state["version_data"]["VERSION"] = fncm_version
-        state["version_data"]["ALL_CHANNELS"] = all_channels
+        state["setup"].silent_parse_load_images_file()
 
         state["setup"].podman_available = results["podman"]
 

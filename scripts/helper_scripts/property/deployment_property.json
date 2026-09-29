@@ -17,6 +17,13 @@
       "Platform type."
     ]
   },
+  "FIPS_SUPPORT": {
+    "value": false,
+    "comment": [
+      "Enable FIPS compliance mode.",
+      "When true, sets enable_fips: true in the generated CR."
+    ]
+  },
   "OPENSEARCH_CLUSTER_HOSTNAME": {
     "value": "",
     "comment": [

@@ -16,7 +16,7 @@ metadata:
     app.kubernetes.io/instance: ibm-cas
     app.kubernetes.io/managed-by: ibm-cas
     app.kubernetes.io/name: ibm-cas
-    release: 1.0.3
+    release: 1.0.4
 spec:
   ## The version of the Content Assistant operator that is being used.
   appVersion: 1.0.0
@@ -32,6 +32,7 @@ spec:
     ## Choose the licensing model for the Content Assistant components.
     ## Valid values are:
     ## "fncm" for IBM FileNet Content Manager,
+    ## "cp4ba" for IBM Cloud Pak for Business Automation.
     sc_cas_license_type: "fncm"
 
     ## All Content Assistant components must use/share the image_pull_secrets to pull images.

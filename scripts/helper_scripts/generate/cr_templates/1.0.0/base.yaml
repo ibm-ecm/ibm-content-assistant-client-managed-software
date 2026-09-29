@@ -52,6 +52,9 @@ spec:
     ## The platform to be deployed specified by the user.  Possible values are: OCP and other.
     sc_deployment_platform: "<Required>"
 
+    # Enable/disable FIPS mode for the deployment (default value is "false")
+    enable_fips: false
+
     ## The optional parameter to enable/disable the creation of sample network policy templates for Content Assistant components.  If the parameter is not defined, then the default value is "false".
     ## Set this flag to "true" if you plan to have restricted network policies in Content Assistant namespaces so that the operators can create sample network policy templates for Content Assistant components.
     ## Please refer to the Content Assistant documentation for more information about how to retrieve and apply the sample network policy templates.

@@ -9,16 +9,52 @@
 #
 ###############################################################################
 
+import sys
 from enum import Enum
 from urllib.parse import urlparse
 
+import questionary
 import requests
+from questionary import Style
 from rich import print
 from rich.panel import Panel
-from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.table import Table
 from rich.text import Text
 
 from ..utilities.kubernetes_utilites import KubernetesUtilities
+from ..utilities.questionary_utils import safe_questionary_prompt
+
+# ── Shared questionary style ──────────────────────────────────────────────────
+_QS = Style([
+    ("qmark",       "fg:ansibrightcyan bold"),
+    ("question",    "bold"),
+    ("answer",      "fg:ansibrightcyan bold"),
+    ("pointer",     "fg:ansibrightcyan bold"),
+    ("selected",    "fg:ansicyan"),
+    ("separator",   "fg:ansiblack"),
+    ("instruction", "fg:ansiblack"),
+])
+
+
+def _info_panel(title: str, body: str | Text, border: str = "cyan") -> None:
+    """Print a cyan info Panel above a questionary prompt."""
+    if isinstance(body, str):
+        body = Text.from_markup(body)
+    print(Panel(body, title=f"[bold cyan]{title}[/bold cyan]",
+                border_style=border, padding=(1, 2)))
+    print()
+
+
+def _kv_panel(title: str, rows: list[tuple[str, str]], border: str = "cyan") -> None:
+    """Print a key-value info panel built from a list of (label, value) pairs."""
+    tbl = Table.grid(padding=(0, 2))
+    tbl.add_column(style="cyan", justify="left")
+    tbl.add_column(style="white")
+    for label, value in rows:
+        tbl.add_row(label, value)
+    print(Panel(tbl, title=f"[bold cyan]{title}[/bold cyan]",
+                border_style=border, padding=(1, 2)))
+    print()
 
 requests.packages.urllib3.disable_warnings()
 
@@ -225,7 +261,7 @@ class GatherPrereqOptions:
         other = 2
 
     class LicenseModel(Enum):
-        fncm = 1
+        CCX = 1
         cp4ba = 2
 
     class AIProviderType(Enum):
@@ -234,6 +270,7 @@ class GatherPrereqOptions:
         '''
         WATSONX_SAAS = 1
         WATSONX_LIGHTWEIGHT = 2
+        MODEL_GATEWAY = 3
 
 
     def __init__(self, logger, console):
@@ -244,13 +281,14 @@ class GatherPrereqOptions:
         self._vector_database_number = 1
         self._vector_database_details = []
         self._platform = self.Platform(1).name
-        self._license_model = "FNCM"
+        self._license_model = "fncm"
         self._ingress = False
         self._logger = logger
         self._console = console
         self._ssl_directory_list = []
         self._cas_version = "1.0.0"
         self._np_support = False
+        self._fips_support = False
         self._enable_admin_access = False
         self._auth_type = self.AuthType(1).name
         self._namespace = None
@@ -258,6 +296,7 @@ class GatherPrereqOptions:
         self._script_type = "gather"
         self._k = KubernetesUtilities(self._logger)
         self._ai_provider_type = "WATSONX_SAAS"
+        self._model_gateway_ssl_enabled = False
         self._create_opensearch_cluster = False
         self._opensearch_storage_class = "<Required>"
         self._opensearch_block_storage_class = "<Required>"
@@ -279,12 +318,12 @@ class GatherPrereqOptions:
         return self._cas_version
 
     @property
-    def egress_support(self):
-        return self._egress_support
-
-    @property
     def np_support(self):
         return self._np_support
+
+    @property
+    def fips_support(self):
+        return self._fips_support
 
 
     @property
@@ -361,6 +400,14 @@ class GatherPrereqOptions:
         self._ai_provider_type = value
 
     @property
+    def model_gateway_ssl_enabled(self):
+        return self._model_gateway_ssl_enabled
+
+    @model_gateway_ssl_enabled.setter
+    def model_gateway_ssl_enabled(self, value):
+        self._model_gateway_ssl_enabled = value
+
+    @property
     def create_opensearch_cluster(self):
         return self._create_opensearch_cluster
 
@@ -385,214 +432,247 @@ class GatherPrereqOptions:
         return self._opensearch_genai_password
 
     def collect_ai_provider_type(self):
-        """
-        Collect AI Provider type from the user
-        """
+        """Collect AI Provider type from the user via questionary select."""
         try:
-            print(Panel.fit("AI Provider Type"))
-            print()
-            print("Select the AI Provider type you want to use:")
-            print()
-            while True:
-                print("1. WatsonX SaaS (requires API Key, Space ID, and URL)")
-                print("2. WatsonX Lightweight (requires API Key, Username, and URL)")
-                print()
-                result = IntPrompt.ask('Enter a valid option [[b]1[/b] or [b]2[/b]]')
+            _info_panel(
+                "🤖  AI Provider Type",
+                "[bold white]IBM Content Assistant supports three AI provider modes:[/bold white]\n\n"
+                "[bold cyan]WatsonX SaaS[/bold cyan]  — IBM-hosted cloud service\n"
+                "  Requires: [dim]API Key, Space ID, and WatsonX URL[/dim]\n\n"
+                "[bold cyan]WatsonX Lightweight[/bold cyan]  — self-managed, in-cluster deployment\n"
+                "  Requires: [dim]API Key, Username, and deployment URL[/dim]\n\n"
+                "[bold cyan]Model Gateway[/bold cyan]  — shared gateway with per-tenant API keys\n"
+                "  Requires: [dim]Gateway URL, SSL setting, and one API Key per tenant[/dim]\n\n"
+                "[dim]Use SaaS for IBM Cloud-hosted models. Use Lightweight for an on-premises or CNCF deployment.\n"
+                "Use Model Gateway when multiple tenants share a single gateway endpoint.[/dim]",
+            )
 
-                if 1 <= result <= 2:
-                    self._ai_provider_type = self.AIProviderType(result).name
-                    break
-
-                print("\n[prompt.invalid]Number must be between [[b]1[/b] and [b]2[/b]]")
-
+            result = safe_questionary_prompt(
+                questionary.select,
+                message="Select AI Provider type:",
+                choices=[
+                    questionary.Choice("WatsonX SaaS  (API Key + Space ID + URL)",
+                                       value="WATSONX_SAAS"),
+                    questionary.Choice("WatsonX Lightweight  (API Key + Username + URL)",
+                                       value="WATSONX_LIGHTWEIGHT"),
+                    questionary.Choice("Model Gateway  (API Key per tenant + shared URL)",
+                                       value="MODEL_GATEWAY"),
+                ],
+                style=_QS,
+            )
+            self._ai_provider_type = result
             self._logger.info(f"AI Provider type selected: {self._ai_provider_type}")
 
         except Exception as e:
             self._logger.exception(
                 f"Exception from gather script in collect_ai_provider_type function - {str(e)}")
 
+    def collect_model_gateway_details(self):
+        """Collect ModelGateway SSL preference from the user."""
+        try:
+            _info_panel(
+                "🌐  Model Gateway Configuration",
+                "[bold white]Model Gateway uses a gateway URL and an API key.[/bold white]\n\n"
+                "[dim]•[/dim] API key is stored as a Kubernetes secret\n"
+                "[dim]•[/dim] URL and API key remain as [bold]<Required>[/bold] placeholders — fill them in after generation\n"
+                "[dim]•[/dim] SSL encrypts traffic between the operator and the gateway endpoint",
+            )
+
+            # Prompt for SSL
+            ssl_enabled = safe_questionary_prompt(
+                questionary.confirm,
+                message="Enable SSL for the Model Gateway connection?",
+                default=True,
+                style=_QS,
+            )
+            self._model_gateway_ssl_enabled = ssl_enabled
+            self._logger.info(f"Model Gateway SSL enabled: {self._model_gateway_ssl_enabled}")
+
+        except Exception as e:
+            self._logger.exception(
+                f"Exception from gather script in collect_model_gateway_details function - {str(e)}")
+
     def collect_namespace(self, namespace=None):
-        # namespace parameter is none when silent mode is NOT selected, hence the conditions to skip conditions if silent mode is selected
+        """Collect and validate a Kubernetes namespace via questionary text prompt."""
         try:
             self._logger.info("Gathering namespace information")
+
             if namespace is None:
-                print()
-                print(Panel.fit("Namespace"))
-                print()
                 try:
                     self._current_namespace = self._k.current_namespace
-                    self._logger.info(f"Current namespace from kubeconfig: {self._current_namespace}")
-                except Exception as e:
+                    self._logger.info(
+                        f"Current namespace from kubeconfig: {self._current_namespace}")
+                except Exception:
                     self._current_namespace = None
-                    self._logger.info("Gathering namespace information failed")
-
+                    self._logger.info("Could not detect current namespace from kubeconfig")
 
             if self._platform in ["OCP"]:
-                invalid_namespaces = ["services", "default", "calico-system", "ibm-cert-store", "ibm-observe",
-                                      "ibm-system", "ibm-odf-validation-webhook"]
+                invalid_namespaces = [
+                    "services", "default", "calico-system",
+                    "ibm-cert-store", "ibm-observe", "ibm-system",
+                    "ibm-odf-validation-webhook",
+                ]
                 invalid_namespace_to_start_with = ["openshift-", "kube-"]
             else:
                 invalid_namespaces = ["services", "default", "calico-system"]
                 invalid_namespace_to_start_with = ["kube-"]
 
+            # Build context panel — only shown in interactive mode
+            ctx_rows = [
+                ("Rules:", "lowercase letters, digits, and hyphens only"),
+                ("Max length:", "63 characters"),
+                ("Cannot start with:", ", ".join(invalid_namespace_to_start_with)),
+                ("Reserved names:", ", ".join(invalid_namespaces[:3]) + " …"),
+            ]
+            if self._current_namespace:
+                ctx_rows.insert(0, ("Detected:", self._current_namespace))
+
             while True:
                 if namespace is None:
-                    answer = Prompt.ask("Enter your namespace", default=self._current_namespace)
+                    _kv_panel("☸  Namespace", ctx_rows)
+                    answer = safe_questionary_prompt(
+                        questionary.text,
+                        message="Enter target namespace:",
+                        default=self._current_namespace or "",
+                        style=_QS,
+                    )
+                    answer = answer.strip()
+
+                    # Inline validation — show red panel and re-prompt
+                    def _invalid(msg: str) -> None:
+                        print()
+                        print(Panel.fit(
+                            f"[bold red]✗[/bold red]  {msg}",
+                            border_style="red",
+                        ))
+                        print()
+
+                    if answer == "":
+                        _invalid("Namespace cannot be empty.")
+                        continue
+                    if any(answer == v for v in invalid_namespaces):
+                        _invalid(f"[bold yellow]{answer}[/bold yellow] is a reserved namespace.")
+                        continue
+                    if any(answer.startswith(v) for v in invalid_namespace_to_start_with):
+                        _invalid(f"Namespace cannot start with [bold yellow]{answer.split('-')[0]}-[/bold yellow]")
+                        continue
+                    if answer.isnumeric():
+                        _invalid("Namespace cannot be all digits.")
+                        continue
+                    if " " in answer:
+                        _invalid("Namespace cannot contain spaces — use [bold cyan]-[/bold cyan] instead.")
+                        continue
+                    if any(c.isupper() for c in answer):
+                        _invalid("Namespace must be lowercase.")
+                        continue
+                    if "_" in answer:
+                        _invalid("Namespace cannot contain [bold cyan]_[/bold cyan] — use [bold cyan]-[/bold cyan] instead.")
+                        continue
+
                     if self._script_type != "deploy":
                         namespace_exists = self._k.check_namespace_exists(namespace=answer)
                         if not namespace_exists:
-                            print()
-                            print(Panel.fit(f"Namespace '{answer}' does not exist.\n"
-                                            f"Enter a valid namespace for script to proceed.", style="bold red"))
-                            print()
+                            _invalid(
+                                f"Namespace [bold yellow]{answer}[/bold yellow] does not exist in the cluster.")
                             continue
+
                 else:
-                    # silent install check for namespace will not loop more than once if invalid namespace is provided
+                    # Silent mode — validate once and exit on any error
+                    answer = namespace.strip()
                     if self._script_type != "deploy":
-                        self._logger.info(f"Checking if namespace: {namespace} exists.")
-                        namespace_exists = self._k.check_namespace_exists(namespace=namespace)
-                        if not namespace_exists:
-                            self._logger.debug(f"Namespace '{namespace}' does not exist.")
-                            print()
-                            print(Panel.fit(f"Namespace '{namespace}' does not exist.\n"
-                                            f"Enter a valid namespace for script to proceed.", style="bold red"))
-                            print()
-                            exit(1)
-                    answer = namespace
+                        self._logger.info(f"Checking if namespace: {answer} exists.")
+                        if not self._k.check_namespace_exists(namespace=answer):
+                            self._logger.error(f"Namespace '{answer}' does not exist.")
+                            print(Panel.fit(
+                                f"[bold red]✗[/bold red]  Namespace [bold yellow]{answer}[/bold yellow] "
+                                "does not exist.",
+                                border_style="red",
+                            ))
+                            sys.exit(1)
 
-                answer = answer.strip()
-                # Start of namespace validation
-                # Check if the answer is not empty after stripping whitespace
-                if answer == '':
-                    self._logger.debug(f"Namespace cannot be empty. Please try again")
-                    print()
-                    print("[prompt.invalid]Namespace cannot be empty. Please try again")
-                    print()
-                    if namespace is None:
-                        continue
-                    else:
-                        exit(0)
-
-                # Check if the answer is not in the list of invalid namespaces
-                if any(answer in value for value in invalid_namespaces):
-                    invalid_msg = ""
-                    for value in invalid_namespaces:
-                        invalid_msg += f"- {value}\n"
-                    invalid_msg.strip()
-
-                    print()
-                    print(f"[prompt.invalid]Namespace cannot be any of the following. Please try again.\n{invalid_msg}")
-                    print()
-                    self._logger.debug(f"Namespace cannot be any of the following: {invalid_msg}")
-                    if namespace is None:
-                        continue
-                    else:
-                        exit(0)
-
-                if any(answer.startswith(value) for value in invalid_namespace_to_start_with):
-                    invalid_msg = ""
-                    for value in invalid_namespace_to_start_with:
-                        invalid_msg += f"- {value}\n"
-                    invalid_msg = invalid_msg.strip()
-                    print()
-                    print(
-                        f"[prompt.invalid]Namespace cannot start with any of the following. Please try again.\n{invalid_msg}")
-                    print()
-                    self._logger.debug(f"Namespace cannot start with any of the following: {invalid_msg}")
-                    if namespace is None:
-                        continue
-                    else:
-                        exit(0)
-
-                # Check if namespace is only numbers
-                if answer.isnumeric():
-                    print()
-                    print("[prompt.invalid]Namespace cannot be a number. Please try again.")
-                    print()
-                    self._logger.debug(f"Namespace cannot be a number. Please try again.")
-                    if namespace is None:
-                        continue
-                    else:
-                        exit(0)
-
-                # Check if namespace is more than 1 word
-                if " " in answer:
-                    print()
-                    print("[prompt.invalid]Namespace cannot contain spaces. Use '-'. Please try again.")
-                    print()
-                    if namespace is None:
-                        continue
-                    else:
-                        exit(0)
-
-
-                # Check if the answer has any uppercase letters
-                if any(char.isupper() for char in answer):
-                    print()
-                    print("[prompt.invalid]Namespace cannot contain uppercase letters. Please try again.")
-                    print()
-                    self._logger.debug(f"Namespace cannot contain uppercase letters. Please try again.")
-                    if namespace is None:
-                        continue
-                    else:
-                        exit(0)
-
-                # Check if namespace has an underscore
-                if "_" in answer:
-                    print()
-                    print("[prompt.invalid]Namespace cannot contain '_'. Use '-'. Please try again.")
-                    print()
-                    self._logger.debug(f"Namespace cannot be a number. Please try again.")
-                    if namespace is None:
-                        continue
-                    else:
-                        exit(0)
-
-                # for all scripts using this function other than deploy operator we need to check if namespace exists
                 self._namespace = answer
                 self._logger.info(f"Namespace entered: {self._namespace}")
                 break
 
         except Exception as e:
             self._logger.exception(
-                f"Exception from gathering deployment details in collect namespace function -  {str(e)}")
+                f"Exception from gathering deployment details in collect namespace function - {str(e)}")
 
 
+
+    def collect_fips_support(self):
+        """Ask whether to enable FIPS compliance mode."""
+        try:
+            _info_panel(
+                "🔐  FIPS Compliance",
+                "[bold white]FIPS mode enforces federal cryptographic standards.[/bold white]\n\n"
+                "[dim]•[/dim] Sets [cyan]enable_fips: true[/cyan] in the generated CR\n\n"
+                "[dim]Enable only if your organisation mandates FIPS compliance.[/dim]",
+            )
+
+            result = safe_questionary_prompt(
+                questionary.confirm,
+                message="Enable FIPS compliance mode?",
+                default=False,
+                style=_QS,
+            )
+            if result:
+                self._fips_support = True
+
+        except Exception as e:
+            self._logger.exception(
+                f"Exception from gather script in collect_fips_support function - {str(e)}")
 
     def collect_networkpolicy_info(self):
+        """Ask whether to generate Network Policy templates."""
         try:
+            _info_panel(
+                "🔒  Network Policies",
+                "[bold white]Network Policies control pod-level traffic in your cluster.[/bold white]\n\n"
+                "[dim]•[/dim] Policies are [bold]not[/bold] applied automatically — they are generated as templates\n"
+                "[dim]•[/dim] Templates cover both [cyan]ingress[/cyan] and [cyan]egress[/cyan] directions\n"
+                "[dim]•[/dim] Apply them manually with [bold cyan]kubectl apply -f[/bold cyan] after reviewing\n\n"
+                "[dim]Recommended for production environments that enforce network isolation.[/dim]",
+            )
 
-            print(Panel.fit("Generate Network Policies Templates"))
-            print()
-            print("Network Policies are used to control the network traffic to and from the pods in your cluster.")
-            print("Network Policies are not installed automatically by the operator, but can be generated.")
-            print("The operator can generate network policy templates for both egress and ingress that can be applied manually.")
-            print()
-            result = Confirm.ask("Do you want to generate Network Policies templates for your deployment?")
+            result = safe_questionary_prompt(
+                questionary.confirm,
+                message="Generate Network Policy templates for this deployment?",
+                default=False,
+                style=_QS,
+            )
             if result:
                 self._np_support = True
 
         except Exception as e:
             self._logger.exception(
-                f"Exception from gather script in collect version function -  {str(e)}")
+                f"Exception from gather script in collect_networkpolicy_info function - {str(e)}")
 
     def collect_content_assistant_admin_access(self):
+        """Ask whether to enable the IBM Content Assistant CLI admin access."""
         try:
+            _info_panel(
+                "🖥  IBM Content Assistant CLI",
+                "[bold white]Optionally enable CLI-based administration of IBM Content Assistant.[/bold white]\n\n"
+                "[dim]•[/dim] The CLI is [bold]disabled[/bold] by default\n"
+                "[dim]•[/dim] On [cyan]OCP[/cyan]: exposed via an OpenShift [bold]Route[/bold]\n"
+                "[dim]•[/dim] On [cyan]CNCF[/cyan]: exposed via a Kubernetes [bold]Ingress[/bold]\n"
+                "[dim]•[/dim] A [bold]private key[/bold] and [bold]passphrase[/bold] are auto-generated for secure access\n\n"
+                "[dim]Enable only if you need programmatic or scripted administration of Content Assistant.[/dim]",
+            )
 
-            print(Panel.fit("IBM Content Assistant CLI"))
-            print()
-            print("The IBM Content Assistant CLI provides a command line interface to manage and configure IBM Content Assistant.")
-            print("By default, the CLI is not accessible. Enabling CLI Admin Access allows you to use the CLI for administrative tasks.")
-            print("If enabled, the CLI can be accessed via a route on OCP or a Ingress service on CNCF.")
-            print("A private key and passphrase will be generated for secure access to the CLI.")
-            print()
-            result = Confirm.ask("Do you want to enable IBM Content Assistant CLI?")
+            result = safe_questionary_prompt(
+                questionary.confirm,
+                message="Enable IBM Content Assistant CLI admin access?",
+                default=False,
+                style=_QS,
+            )
             if result:
                 self._enable_admin_access = True
 
         except Exception as e:
             self._logger.exception(
-                f"Exception from gather script in collect content assistant admin access function -  {str(e)}")
+                f"Exception from gather script in collect_content_assistant_admin_access function - {str(e)}")
 
 
     # Create a function to check if the dsicovery url is valid
@@ -611,65 +691,83 @@ class GatherPrereqOptions:
             print(f"Exception from check_discovery_url function - {str(e)}")
             return False
 
-    # Create a function to gather vector db number from the user
     def collect_vector_db_number(self):
+        """Ask how many Vector Databases to configure."""
         try:
-            print(Panel.fit("Vector Database"))
+            _info_panel(
+                "🗄  Vector Databases",
+                "[bold white]IBM Content Assistant requires at least one Vector Database.[/bold white]\n\n"
+                "[dim]•[/dim] Each Vector Database stores AI-generated embeddings for document search\n"
+                "[dim]•[/dim] Multiple databases are supported for high-availability setups\n"
+                "[dim]•[/dim] At least [bold cyan]1[/bold cyan] must be configured\n\n"
+                "[dim]For most deployments, a single Vector Database is sufficient.[/dim]",
+            )
 
-            print("IBM Content Assistant requires at least one Vector Database.")
-            default = 1
             while True:
-                print()
-                result = IntPrompt.ask(
-                    "How many Vector Database do you want to configure with IBM Content Assistant?", default=default
+                raw = safe_questionary_prompt(
+                    questionary.text,
+                    message="Number of Vector Databases to configure:",
+                    default="1",
+                    style=_QS,
+                    validate=lambda v: (
+                        True if v.strip().isdigit() and int(v.strip()) >= 1
+                        else "Enter a whole number ≥ 1"
+                    ),
                 )
-                if result >= default:
-                    self._vector_database_number = result
-                    break
-                print(
-                    f"[prompt.invalid]Number of Vector Database to be configured must be equal or greater than [[b]{default}[/b]]")
+                self._vector_database_number = int(raw.strip())
+                break
 
         except Exception as e:
             self._logger.exception(
-                f'Exception from gather script in collect_vector_db_number function -  {str(e)}')
+                f"Exception from gather script in collect_vector_db_number function - {str(e)}")
 
-    # Create a function to gather the vector DB auth type for each vector DB
-    def collect_auth_type(self,db_label="VECTORDB"):
+    def collect_auth_type(self, db_label: str = "VECTORDB") -> str:
+        """Collect Vector Database authentication type via questionary select."""
         try:
+            _info_panel(
+                f"🔑  {db_label} — Authentication Type",
+                "[bold white]Choose how IBM Content Assistant authenticates to the Vector Database.[/bold white]\n\n"
+                "[bold cyan]Basic Authentication[/bold cyan]  (BASICAUTH)\n"
+                "  [dim]Standard username + password — simplest to configure[/dim]\n\n"
+                "[bold cyan]OpenID Connect[/bold cyan]  (OIDC)\n"
+                "  [dim]Token-based auth via an OIDC provider — required for enterprise SSO setups[/dim]\n"
+                "  [dim]Selecting OIDC will also prompt for an OIDC SSL certificate[/dim]",
+            )
 
-                print(Panel.fit(f"Vector Database {db_label} Authentication Type"))
-                while True:
-                    print()
-                    print("Your Authentication Type determines the authentication mechanism used to connect to the Vector Database.")
-                    print()
-                    print("Select an Authentication Type")
-                    print('1. Basic Authentication')
-                    print('2. OpenID Connect (OIDC)')
-
-                    result = IntPrompt.ask('Enter a valid option between [[b]1[/b] and [b]2[/b]]')
-
-                    if 1 <= result <= 2:
-                        vector_db_auth_type = self.AuthType(result).name
-                        break
-
-                    print("[prompt.invalid] Number must be between [[b]1[/b] and [b]2[/b]]")
-                return vector_db_auth_type
-
+            result = safe_questionary_prompt(
+                questionary.select,
+                message=f"Authentication type for {db_label}:",
+                choices=[
+                    questionary.Choice("Basic Authentication  (username + password)",
+                                       value="BASICAUTH"),
+                    questionary.Choice("OpenID Connect  (OIDC)",
+                                       value="OIDC"),
+                ],
+                style=_QS,
+            )
+            return result
 
         except Exception as e:
-            # Create log for exception
             self._logger.exception(
-                f"Exception from gather script in auth_type function -  {str(e)}")
-            vector_db_auth_type= "BASICAUTH"
-            return vector_db_auth_type
+                f"Exception from gather script in collect_auth_type function - {str(e)}")
+            return "BASICAUTH"
 
-    def collect_vector_ssl_info(self):
-        print()
-        print("Enabling SSL ensures that the data transmitted between IBM Content Assistant and your Vector Database is encrypted and secure.\n"
-              "This is especially important if your Vector Database is hosted externally or in a different network environment.\n"
-              "If you selected OIDC as your authentication type, the OIDC provider connection will also be secured using SSL.")
-        print()
-        return Confirm.ask("Do you want to enable SSL for your database selection?")
+    def collect_vector_ssl_info(self) -> bool:
+        """Ask whether to enable SSL for the Vector Database connection."""
+        _info_panel(
+            "🔒  Vector Database — SSL / TLS",
+            "[bold white]SSL encrypts traffic between IBM Content Assistant and the Vector Database.[/bold white]\n\n"
+            "[dim]•[/dim] [bold]Strongly recommended[/bold] when the database is hosted externally or in a different network\n"
+            "[dim]•[/dim] If [cyan]OIDC[/cyan] was chosen as auth type, the OIDC provider connection is also secured\n"
+            "[dim]•[/dim] You will need to provide the PEM certificate file for the database's CA\n\n"
+            "[dim]Enable SSL unless the Vector Database is co-located on the same trusted internal network.[/dim]",
+        )
+        return safe_questionary_prompt(
+            questionary.confirm,
+            message="Enable SSL for this Vector Database connection?",
+            default=True,
+            style=_QS,
+        )
 
     # function to collect the vector db details
     def collect_vector_db_details(self):
@@ -688,140 +786,191 @@ class GatherPrereqOptions:
 
             self._vector_database_details.append(vector_db_instance)
 
-    # Create a function to gather license model details
-    def collect_license_model(self, version_data):
+    def collect_license_model(self, version_data: dict) -> None:
+        """Collect license model selection and obtain explicit license acceptance."""
         try:
-            print(Panel.fit("License and Version"))
-            print()
-
-            version = version_data.get("VERSION", '1.0.0' )
+            version = version_data.get("VERSION", "1.0.0")
             self._cas_version = version
-            display = version_data.get("DISPLAY", '1.0.0' )
+            display = version_data.get("DISPLAY", version)
 
-            print(Panel.fit(Text(f"Detected IBM Content Assistant Version: {display}"), style="bold cyan"))
+            # ── Step 1: version + license model selection ─────────────────────
+            _info_panel(
+                "📄  License & Version",
+                f"[bold white]Select the license model for your IBM Content Assistant deployment.[/bold white]\n\n"
+                f"[cyan]Detected version:[/cyan]  [bold green]{display}[/bold green]\n\n"
+                f"[bold cyan]Essentials[/bold cyan]  — IBM Content Cortex Essentials license\n"
+                f"[bold cyan]Premium[/bold cyan]     — IBM Content Cortex Premium license\n"
+                f"[bold cyan]CP4BA[/bold cyan]       — IBM Cloud Pak for Business Automation bundle\n"
+                f"  [dim](includes OpenSearch operator support)[/dim]",
+            )
+
+            result = safe_questionary_prompt(
+                questionary.select,
+                message="Select a License Type:",
+                choices=[
+                    questionary.Choice("Essentials", value="fncm"),
+                    questionary.Choice("Premium",    value="fncm"),
+                    questionary.Choice("CP4BA",      value="cp4ba"),
+                ],
+                style=_QS,
+            )
+            self._license_model = result
+
+            # ── Step 2: license review ────────────────────────────────────────
+            license_info = Text()
+            license_info.append("🏷️ License Type Selection\n\n", style="bold cyan")
+            license_info.append("Choose the license model that matches your entitlement:\n\n", style="white")
+            license_info.append("  • ", style="cyan")
+            license_info.append("Content Cortex Essentials", style="bold green")
+            license_info.append(" - IBM Content Cortex Essentials license\n", style="white")
+            license_info.append("  • ", style="cyan")
+            license_info.append("Content Cortex Premium", style="bold green")
+            license_info.append(" - IBM Content Cortex Premium license\n", style="white")
+            license_info.append("  • ", style="cyan")
+            license_info.append("CP4BA", style="bold green")
+            license_info.append(" - Cloud Pak for Business Automation license\n\n", style="white")
+
+            license_info.append("📄 ", style="bold cyan")
+            license_info.append("IBM Content Assistant:  ", style="bold white")
+            license_info.append("https://ibm.biz/CPE_CCX_License_26_0_0\n", style="cyan")
+            license_info.append("📄 ", style="bold cyan")
+            license_info.append("Software Notices:    ", style="bold white")
+            license_info.append("https://ibm.biz/CAS_Notices_1_0_0\n", style="cyan")
+            if result == "cp4ba":
+                license_info.append("📄 ", style="bold cyan")
+                license_info.append("CP4BA License:       ", style="bold white")
+                license_info.append("https://ibm.biz/cp4ba_license_2600\n", style="cyan")
+                license_info.append("📄 ", style="bold cyan")
+                license_info.append("CP4BA Reserved:      ", style="bold white")
+                license_info.append("https://ibm.biz/cp4ba-reserved-license-2600\n", style="cyan")
+
+            license_info.append("\n⚠ ", style="bold yellow")
+            license_info.append(
+                "By accepting, you agree to comply with all license terms and conditions.\n"
+                "Data collection is enabled by default — see the License Information document for details.",
+                style="dim white",
+            )
+
+            print(Panel(
+                license_info,
+                title="[bold yellow]⚠  License Agreement Required[/bold yellow]",
+                border_style="yellow",
+                padding=(1, 2),
+            ))
             print()
 
-            while True:
+            accepted = safe_questionary_prompt(
+                questionary.confirm,
+                message="Do you accept the International Program License Agreement?",
+                default=False,
+                style=_QS,
+            )
+
+            if not accepted:
                 print()
-                print("Select a License Type")
-                print("1. FNCM")
-                print("2. CP4BA")
-                result = IntPrompt.ask('Enter a valid option [[b]1[/b] and [b]2[/b]]')
-
-                if 1 <= result <= 2:
-                    self._license_model = self.LicenseModel(result).name
-                    break
-
-                print("\n[prompt.invalid]Number must be between [[b]1[/b] and [b]2[/b]]")
-
-            cas_license_url = Text("https://ibm.biz/CAS_License_1_0_0",
-                                    style="link hhttps://ibm.biz/CAS_License_1_0_0")
-            cas_notices_url = Text("https://ibm.biz/CAS_Notices_1_0_0",
-                                   style="link https://ibm.biz/CAS_Notices_1_0_0")
-            cp4ba_license_url = Text("https://ibm.biz/cp4ba_license_2600",
-                                     style="link https://ibm.biz/cp4ba_license_2600")
-            cp4ba_reserved_license_url = Text("https://ibm.biz/cp4ba-reserved-license-2600",
-                                                style="link https://ibm.biz/cp4ba-reserved-license-2600")
-
-            license_message = (f"IMPORTANT: Review the license information for the product bundle you are deploying.\n\n" 
-                              f"IBM Content Assistant Client Managed Software license information here: {cas_license_url}\n" 
-                              f"IBM Software Notices here: {cas_notices_url}")
-
-
-            if self._license_model.lower() == "cp4ba":
-                license_message += (f"\nIBM Cloud Pak for Business Automation license information here: {cp4ba_license_url}\n"
-                                    f"IBM Cloud Pak for Business Automation Reserved license here: {cp4ba_reserved_license_url}")
+                print(Panel.fit(
+                    "[bold red]✗[/bold red]  License not accepted — deployment cancelled.",
+                    border_style="red",
+                ))
+                sys.exit(1)
 
             print()
-            print(Panel.fit(Text(license_message), style="bold cyan"))
-            print()
+            print(Panel.fit(
+                "[bold green]✓[/bold green]  License Agreement accepted.",
+                border_style="green",
+            ))
 
-            self._accept_license = Confirm.ask("Do you accept the International Program License?")
-
-            if not self._accept_license:
-                print("\n[prompt.invalid]You must accept the International Program License to continue.")
-                exit(1)
-
-            # If CP4BA license is selected, ask about OpenSearch cluster creation
-            if self._license_model.lower() == "cp4ba":
-                self.collect_opensearch_cluster_option()
-
+        except SystemExit:
+            raise
         except Exception as e:
             self._logger.exception(
-                f"Exception from gather script in license model function -  {str(e)}")
+                f"Exception from gather script in collect_license_model function - {str(e)}")
 
 
-    # Create a function to gather OpenSearch cluster configuration from user
-    def collect_opensearch_cluster_option(self):
+    def collect_opensearch_cluster_option(self) -> None:
         """
-        Prompts the user if they want to use OpenSearch cluster when CP4BA license is selected.
-        Cluster details will be configured in the property file.
+        Ask whether to provision an OpenSearch cluster via the CP4BA operator.
+        Only called when CP4BA license is selected.
         """
         try:
-            print()
-            print(Panel.fit("OpenSearch Cluster Configuration"))
-            print()
-            print("IBM Content Assistant can use an OpenSearch cluster as a vector database.")
-            print("The OpenSearch Operator is already installed with your CP4BA deployment.")
-            print("You can create and configure an OpenSearch cluster for use with Content Assistant.")
-            print()
-            
-            self._create_opensearch_cluster = Confirm.ask(
-                "Do you want to use OpenSearch as your vector database?"
+            _info_panel(
+                "🔍  OpenSearch Cluster (CP4BA)",
+                "[bold white]IBM Content Assistant can use OpenSearch as its Vector Database.[/bold white]\n\n"
+                "[dim]•[/dim] The [cyan]OpenSearch Operator[/cyan] is already included with your CP4BA deployment\n"
+                "[dim]•[/dim] Selecting [bold]Yes[/bold] generates OpenSearch cluster YAML manifests for your namespace\n"
+                "[dim]•[/dim] Cluster storage classes and hostname are configured in the property file\n"
+                "[dim]•[/dim] Selecting [bold]No[/bold] lets you configure an [cyan]external[/cyan] Vector Database instead\n\n"
+                "[dim]Recommended for CP4BA deployments that don't already have a Vector Database.[/dim]",
             )
-            
+
+            self._create_opensearch_cluster = safe_questionary_prompt(
+                questionary.confirm,
+                message="Use OpenSearch (CP4BA) as your Vector Database?",
+                default=True,
+                style=_QS,
+            )
+
+            # In both cases, cluster details are sourced from the property file
+            self._opensearch_storage_class = None
+            self._opensearch_block_storage_class = None
+            self._opensearch_cluster_hostname = None
+            self._opensearch_admin_password = None
+            self._opensearch_genai_password = None
+
             if self._create_opensearch_cluster:
                 print()
                 print(Panel.fit(
-                    Text("OpenSearch will be configured as your vector database.\n"
-                         "Cluster details will be available in the property file for customization."),
-                    style="bold green"
+                    "[bold green]✓[/bold green]  OpenSearch cluster will be configured as your Vector Database.\n"
+                    "  [dim]Review and update the property file before running [bold cyan]generate[/bold cyan].[/dim]",
+                    border_style="green",
                 ))
-                # Set None values - these will be populated with defaults in property file
-                self._opensearch_storage_class = None
-                self._opensearch_block_storage_class = None
-                self._opensearch_cluster_hostname = None
-                self._opensearch_admin_password = None
-                self._opensearch_genai_password = None
-            else:
-                # Set defaults when not creating OpenSearch cluster
-                self._opensearch_storage_class = None
-                self._opensearch_block_storage_class = None
-                self._opensearch_cluster_hostname = None
-                self._opensearch_admin_password = None
-                self._opensearch_genai_password = None
-                
+
         except Exception as e:
             self._logger.exception(
-                f"Exception from gather script in collect_opensearch_cluster_option function - {str(e)}"
+                f"Exception from gather script in collect_opensearch_cluster_option function - {str(e)}")
+
+
+    def collect_platform_ingress(self) -> None:
+        """Collect target platform type and, for CNCF, whether to enable Ingress."""
+        try:
+            _info_panel(
+                "☸  Platform",
+                "[bold white]Select the Kubernetes platform where IBM Content Assistant will be deployed.[/bold white]\n\n"
+                "[bold cyan]OCP[/bold cyan]  — Red Hat OpenShift Container Platform\n"
+                "  [dim]Routes are used for external access — no Ingress configuration needed[/dim]\n\n"
+                "[bold cyan]CNCF[/bold cyan]  — Standard Kubernetes (AKS, EKS, GKE, vanilla K8s)\n"
+                "  [dim]You will be asked whether to enable Kubernetes Ingress for external access[/dim]",
             )
 
-
-    # Create a function to gather platform and ingress enabled from user
-    def collect_platform_ingress(self):
-        try:
-            print(Panel.fit("Platform"))
-            while True:
-                print()
-                print("Select a Platform Type")
-                print("1. OCP")
-                print("2. CNCF")
-                result = IntPrompt.ask('Enter a valid option [[b]1[/b] and [b]2[/b]]')
-
-                if 1 <= result <= 3:
-                    self._platform = self.Platform(result).name
-                    break
-
-                print("\n[prompt.invalid]Number must be between [[b]1[/b] and [b]2[/b]]")
+            result = safe_questionary_prompt(
+                questionary.select,
+                message="Select your deployment platform:",
+                choices=[
+                    questionary.Choice("OCP   — Red Hat OpenShift", value="OCP"),
+                    questionary.Choice("CNCF  — Standard Kubernetes", value="other"),
+                ],
+                style=_QS,
+            )
+            self._platform = result
 
             if self._platform == "other":
-                print()
-                self._ingress = Confirm.ask("Do you want to enable ingress creation?")
-
+                _info_panel(
+                    "🌐  Kubernetes Ingress",
+                    "[bold white]On CNCF clusters, IBM Content Assistant uses an Ingress resource for external access.[/bold white]\n\n"
+                    "[dim]•[/dim] [bold]Enable[/bold] if your cluster has an Ingress controller (nginx, traefik, AWS ALB, etc.)\n"
+                    "[dim]•[/dim] [bold]Disable[/bold] if you will expose services via LoadBalancer or NodePort instead\n\n"
+                    "[dim]Most managed Kubernetes clusters (EKS, AKS, GKE) support Ingress by default.[/dim]",
+                )
+                self._ingress = safe_questionary_prompt(
+                    questionary.confirm,
+                    message="Enable Ingress for external access?",
+                    default=True,
+                    style=_QS,
+                )
 
         except Exception as e:
             self._logger.exception(
-                f"Exception from gather script in collect_platform_ingress function -  {str(e)}")
+                f"Exception from gather script in collect_platform_ingress function - {str(e)}")
 
     # Create a function to gather idp_number from user
     def collect_idp_number(self):
@@ -831,45 +980,67 @@ class GatherPrereqOptions:
                 self._scim_number = 1
                 self._ssl_directory_list.append("scim")
             else:
-                print(Panel.fit("Identity Provider (IDP)"))
-                while True:
-                    print()
-                    result = IntPrompt.ask(
-                        "How many IDP's do you want to configure?", default=1
-                    )
-                    if result >= 1:
-                        self._idp_number = result
-                        break
-                    print("[prompt.invalid]Number of IDP's must be greater than 0")
+                _info_panel(
+                    "🔐  Identity Providers",
+                    "[bold white]Configure how many Identity Providers (IDPs) to set up.[/bold white]\n\n"
+                    "[dim]•[/dim] Each IDP provides an OIDC / token-based authentication source\n"
+                    "[dim]•[/dim] Most deployments use a single IDP\n"
+                    "[dim]•[/dim] Provide at least [bold cyan]1[/bold cyan]\n\n"
+                    "[dim]For most setups, enter [bold cyan]1[/bold cyan] unless you are federating multiple identity providers.[/dim]",
+                )
+                raw = safe_questionary_prompt(
+                    questionary.text,
+                    message="How many Identity Providers do you want to configure?",
+                    default="1",
+                    style=_QS,
+                    validate=lambda v: (
+                        True if v.strip().isdigit() and int(v.strip()) >= 1
+                        else "Enter a whole number ≥ 1"
+                    ),
+                )
+                self._idp_number = int(raw.strip())
         except Exception as e:
             self._logger.exception(
                 f'Exception from gather script in collect_idp_number function -  {str(e)}')
 
-    # Create a function to gather idp_number from user
-    def collect_idp_discovery(self):
+    def collect_idp_discovery(self) -> None:
+        """Collect IDP discovery configuration for each configured IDP."""
         try:
             for i in range(self._idp_number):
-                if i == 0:
-                    idp_id = "idp"
-                else:
-                    idp_id = f"idp{i + 1}"
-
+                idp_id = "idp" if i == 0 else f"idp{i + 1}"
                 self._ssl_directory_list.append(idp_id)
 
-                print()
-                print(Panel.fit(f"IDP ID: {idp_id}"))
+                _info_panel(
+                    f"🔐  Identity Provider — {idp_id}",
+                    f"[bold white]Configure IDP [cyan]{idp_id}[/cyan] for IBM Content Assistant.[/bold white]\n\n"
+                    "[bold cyan]With Discovery URL:[/bold cyan]\n"
+                    "  [dim]The operator fetches the IDP configuration automatically from the discovery endpoint.[/dim]\n"
+                    "  [dim]Discovery URLs end with [bold].well-known/openid-configuration[/bold][/dim]\n\n"
+                    "[bold cyan]Without Discovery URL:[/bold cyan]\n"
+                    "  [dim]You will configure the IDP fields manually in the property file.[/dim]\n\n"
+                    "[dim]Most modern OIDC providers (Keycloak, Azure AD, Okta) support discovery.[/dim]",
+                )
 
-                while True:
-                    print()
-                    print("Discovery Endpoints can used to retrieve the IDP configuration.\n"
-                          "If you do not have a discovery endpoint, you can still configure the IDP manually.\n"
-                          "Discovery endpoints URLs typically end with '/.well-known/openid-configuration'")
-                    print()
-                    discovery_enabled = Confirm.ask("Does this IDP support discovery?")
+                discovery_enabled = safe_questionary_prompt(
+                    questionary.confirm,
+                    message=f"Does {idp_id} support OIDC Discovery?",
+                    default=True,
+                    style=_QS,
+                )
 
-                    if discovery_enabled:
+                if discovery_enabled:
+                    while True:
                         print()
-                        url = Prompt.ask("Enter a valid URL for the IDP discovery endpoint")
+                        url = safe_questionary_prompt(
+                            questionary.text,
+                            message="Enter the OIDC Discovery URL:",
+                            instruction="(must end with /.well-known/openid-configuration)",
+                            style=_QS,
+                            validate=lambda v: (
+                                True if v.strip().endswith(".well-known/openid-configuration")
+                                else "URL must end with /.well-known/openid-configuration"
+                            ),
+                        )
 
                         if self.check_discovery_url(url):
                             idp = self.Idp(discovery_enabled, idp_id, url)
@@ -877,26 +1048,33 @@ class GatherPrereqOptions:
                             self._idp_info.append(idp)
                             break
                         else:
-                            print("\n[prompt.invalid]Discovery URL is invalid")
-                            print(
-                                '\n[prompt.invalid]Make sure your discovery URL ends with ".well-known/openid-configuration"')
-                    else:
-                        idp = self.Idp(discovery_enabled, idp_id)
-                        self._idp_info.append(idp)
-                        break
-
-
+                            print()
+                            print(Panel.fit(
+                                "[bold red]✗[/bold red]  Discovery URL is invalid.\n"
+                                "  Ensure the URL ends with "
+                                "[bold cyan]/.well-known/openid-configuration[/bold cyan]",
+                                border_style="red",
+                            ))
+                else:
+                    idp = self.Idp(discovery_enabled, idp_id)
+                    self._idp_info.append(idp)
 
         except Exception as e:
             self._logger.exception(
-                f'Exception from gather script in collect_idp function -  {str(e)}')
+                f"Exception from gather script in collect_idp_discovery function - {str(e)}")
 
     # Create a function to return all the deployment options as a dictionary
     def to_dict(self):
+        # Derive the auth_type for the summary from the first configured vector DB,
+        # since collect_auth_type() stores the result in the VectorDatabase instance
+        # rather than writing back to self._auth_type.
+        first_db = self._vector_database_details[0] if self._vector_database_details else None
+        auth_type_display = first_db.get_db_auth_type if first_db is not None else self._auth_type
 
         return {
             "vector_database_details": self.vector_db_details,
             "cas_version": self.cas_version,
+            "ccx_version": self.cas_version,   # alias used by the results display
             "platform": self.platform,
             "license_model": self.license_model,
             "ingress": self.ingress,
@@ -908,7 +1086,10 @@ class GatherPrereqOptions:
             "opensearch_block_storage_class": self.opensearch_block_storage_class,
             "opensearch_cluster_hostname": self.opensearch_cluster_hostname,
             "opensearch_admin_password": self.opensearch_admin_password,
-            "opensearch_genai_password": self.opensearch_genai_password
+            "opensearch_genai_password": self.opensearch_genai_password,
+            "np_support": self._np_support,
+            "fips_support": self._fips_support,
+            "auth_type": auth_type_display,
         }
 
 
