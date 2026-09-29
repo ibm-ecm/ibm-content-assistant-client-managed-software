@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helm Charts - IBM Content Assistant</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Carbon Design System v11 - Latest from Official Repository -->
+    <!-- https://github.com/carbon-design-system/carbon/tree/main/packages/styles -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@carbon/styles@latest/css/styles.min.css">
+    
+    <!-- Carbon Web Components - Latest from Official Repository -->
+    <!-- https://github.com/carbon-design-system/carbon/tree/main/packages/web-components -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@carbon/web-components@latest/dist/index.min.js"></script>
+    
+    <link rel="stylesheet" href="./assets/styles.css?v=2">
+    <link rel="stylesheet" href="./assets/helm-charts.css?v=2">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <img src="./assets/ICALogo.svg" alt="IBM Content Assistant Logo" class="nav-logo">
+                <span class="nav-title">IBM Content Assistant</span>
+            </div>
+            <ul class="nav-menu" id="navMenu">
+                <li><a href="index.html" class="nav-link">Home</a></li>
+                <li><a href="helm-charts.html" class="nav-link active">Helm Charts</a></li>
+                <li><a href="releases.html" class="nav-link">Releases & Patches</a></li>
+                <li><a href="https://www.ibm.com/docs/en/cacms/1.0.x" class="nav-link" target="_blank">Documentation</a></li>
+                <li><a href="#" class="nav-link" target="_blank" data-href-env="repoBase">GitHub</a></li>
+            </ul>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Page Header -->
+    <section class="page-header">
+        <div class="container">
+            <h1>Helm Charts Repository</h1>
+            <p>A single Helm chart deploys the IBM Content Assistant Operator, which in turn manages the GenAI Connector Service lifecycle</p>
+        </div>
+    </section>
+
+    <!-- Repository Info -->
+    <section class="repo-info">
+        <div class="container">
+            <div class="info-card">
+                <h2>📦 Repository Information</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Repository URL:</span>
+                        <code class="info-value" data-text-env="chartsBase">https://ibm-ecm.github.io/ibm-content-assistant-client-managed-software/charts</code>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Repository Name:</span>
+                        <code class="info-value">ibm-content-assistant</code>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Hosting:</span>
+                        <span class="info-value" data-public-only style="display:none;">GitHub Pages</span>
+                        <span class="info-value" data-internal-only style="display:none;">GitHub Enterprise (raw)</span>
+                    </div>
+                    <div class="info-item" data-internal-only style="display:none;">
+                        <span class="info-label">Authentication:</span>
+                        <span class="info-value">GHE username + personal access token (<code>repo</code> scope)</span>
+                    </div>
+                    <div class="info-item" data-internal-only style="display:none;">
+                        <span class="info-label">OpenShift CR:</span>
+                        <span class="info-value"><code>ProjectHelmChartRepository</code> with <code>basicAuthConfig</code></span>
+                    </div>
+                </div>
+
+                <!-- Internal dev: credentials notice -->
+                <div data-internal-only style="display:none; margin: 1.25rem 0; padding: 1rem 1.25rem; background: #fff8e1; border-left: 4px solid #f59e0b; border-radius: 4px; font-size: 0.875rem;">
+                    <strong>🔒 Internal access requires GHE credentials.</strong>
+                    This site is SSO-gated. Use <code>raw.github.ibm.com</code> with your GHE username and a personal access token (<code>repo</code> scope) for both Helm CLI and OpenShift.<br><br>
+                    <a href="https://github.ibm.com/settings/tokens/new?description=ibm-content-assistant-helm&scopes=repo" target="_blank" style="color:#0f62fe;">Generate a personal access token →</a>
+                </div>
+
+                <div class="quick-add">
+                    <h3>Quick Add Repository</h3>
+                    <pre data-cmd="helm repo add ibm-content-assistant {chartsBase}&#10;helm repo update"><code>helm repo add ibm-content-assistant https://ibm-ecm.github.io/ibm-content-assistant-client-managed-software/charts
+helm repo update</code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Available Charts -->
+    <section class="charts-section">
+        <div class="container">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 class="section-title" style="margin: 0;">Available Charts</h2>
+                <div class="stream-selector">
+                    <label for="stream-select" style="margin-right: 0.5rem; font-weight: 500; color: var(--gray-70);">Release Stream:</label>
+                    <select id="stream-select" class="stream-select">
+                        <option value="1.0.x" selected>1.0.x (Current)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- ===================== IBM Content Assistant 1.0.x CHARTS ===================== -->
+
+            <!-- IBM Content Assistant Operator - 1.0.4 (Latest) -->
+            <div class="chart-detail" id="content-assistant-operator-104" data-version="1.0.4">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/ICALogo.svg" alt="IBM Content Assistant" class="chart-operator-icon">
+                        <h3>IBM Content Assistant Operator</h3>
+                        <span class="chart-version">v1.0.4</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                        <span class="version-badge">Latest</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/charts/ibm-content-assistant-operator-1.4.0.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    The single Helm chart for IBM Content Assistant. Installing this operator is the only deployment step required —
+                    it automatically provisions, configures, and upgrades the <strong>GenAI Connector Service</strong>.
+                    Requires an existing IBM Content Cortex or CP4BA deployment (CPE + Content Navigator).
+                    Usage is reported to IBM via the Usage Metering Service (UMS).
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">1.0.4</span></div>
+                    <div class="meta-item"><span class="meta-label">App Version:</span><span class="meta-value">1.0.4</span></div>
+                    <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64</span></div>
+                    <div class="meta-item"><span class="meta-label">Operator Image:</span><span class="meta-value">icr.io/cpopen/ibm-content-assistant-operator:1.0.4</span></div>
+                    <div class="meta-item"><span class="meta-label">Managed Service Image:</span><span class="meta-value">cp.icr.io/cp/cas/genaiconnector:1.0.4</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-operator-104">Features</button>
+                    <button class="tab-button" data-tab="values-operator-104">Values</button>
+                </div>
+                <div class="tab-content active" id="features-operator-104">
+                    <h4>What this chart installs</h4>
+                    <ul class="feature-list">
+                        <li><strong>IBM Content Assistant Operator</strong> — namespace-scoped Kubernetes operator that manages the full deployment lifecycle</li>
+                        <li><strong>GenAI Connector Service</strong> (deployed by the operator) — RAG-powered AI service for natural language Q&A, summarization, and document comparison</li>
+                        <li>CRD-based configuration via a <code>ContentAssistant</code> Custom Resource for declarative deployment management</li>
+                        <li>Integrates with CPE + Content Navigator on <strong>CP4BA</strong> or <strong>Content Cortex</strong></li>
+                        <li>Usage metering via <strong>IBM Usage Metering Service (UMS)</strong> — no manual reporting required</li>
+                        <li>Supports watsonx.ai SaaS (IBM Cloud or AWS) and self-managed LLM endpoints</li>
+                        <li>Supports <strong>IBM AI Model Gateway</strong> as an LLM proxy endpoint</li>
+                        <li>Air-gap / offline deployment support</li>
+                    </ul>
+                </div>
+                <div class="tab-content" id="values-operator-104">
+                    <h4>Common Configuration Values</h4>
+                    <pre><code>operator:
+  image:
+    repository: icr.io/cpopen/ibm-content-assistant-operator
+    tag: "1.0.4"
+  namespace: ibm-content-assistant
+imagePullSecrets:
+  - name: ibm-entitlement-key
+# The operator deploys the GenAI Connector — configure its image here
+genaiConnector:
+  image:
+    repository: cp.icr.io/cp/cas/genaiconnector
+    tag: "1.0.4"
+watsonx:
+  apiKey: ""
+  projectId: ""
+  endpoint: "https://us-south.ml.cloud.ibm.com"
+opensearch:
+  endpoint: ""
+  username: ""
+  password: ""
+# Usage metering (UMS) — configured automatically from entitlement key
+usageMetering:
+  enabled: true</code></pre>
+                </div>
+            </div>
+
+            <!-- IBM Usage Metering Service (UMS) - 1.0.7 -->
+            <div class="chart-detail" id="ibm-usage-metering-107" data-version="1.0.7">
+                <div class="chart-header">
+                    <div class="chart-title-group">
+                        <img src="./assets/WDU.svg" alt="IBM Usage Metering Service" class="chart-operator-icon">
+                        <h3>IBM Usage Metering Service (UMS)</h3>
+                        <span class="chart-version">v1.0.7</span>
+                        <span class="scope-badge namespace">Namespace-scoped</span>
+                    </div>
+                    <a href="" class="btn btn-primary" download data-href-env="pagesBase/charts/ibm-usage-metering-1.0.7.tgz">
+                        ⬇️ Download Chart
+                    </a>
+                </div>
+                <p class="chart-description">
+                    Reports IBM Content Assistant usage to IBM for license metering. This chart is installed alongside
+                    the Content Assistant Operator and uses your IBM entitlement key to authenticate usage reports.
+                    Required for all production deployments on Content Cortex or CP4BA.
+                </p>
+                <div class="chart-meta">
+                    <div class="meta-item"><span class="meta-label">Chart Version:</span><span class="meta-value">1.0.7</span></div>
+                    <div class="meta-item"><span class="meta-label">Architecture:</span><span class="meta-value">amd64</span></div>
+                </div>
+                <div class="chart-tabs">
+                    <button class="tab-button active" data-tab="features-ums-107">Features</button>
+                </div>
+                <div class="tab-content active" id="features-ums-107">
+                    <h4>Key Features</h4>
+                    <ul class="feature-list">
+                        <li>Automated IBM license usage reporting for Content Assistant</li>
+                        <li>Authenticated via IBM entitlement key — no manual configuration required</li>
+                        <li>Required for production deployments on Content Cortex or CP4BA</li>
+                        <li>Namespace-scoped deployment</li>
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- Installation Guide -->
+    <section class="installation-guide">
+        <div class="container">
+            <h2 class="section-title">Complete Installation Guide</h2>
+            <p style="text-align: center; margin-bottom: 2rem; color: var(--gray-70);">
+                Choose your preferred installation method below
+            </p>
+            
+            <!-- Method Tabs -->
+            <div class="method-tabs" style="display: flex; justify-content: center; gap: 1rem; margin-bottom: 2rem;">
+                <button class="method-tab active" data-method="python">Python Script</button>
+                <button class="method-tab" data-method="openshift">OpenShift Integration</button>
+                <button class="method-tab" data-method="helm">Helm CLI</button>
+            </div>
+            
+            <!-- Python Script Method -->
+            <div class="method-content active" id="method-python">
+                <div class="guide-steps">
+                    <div class="guide-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Prerequisites</h3>
+                            <ul>
+                                <li>Kubernetes 1.24+ or OpenShift 4.12+</li>
+                                <li>Python 3.12+</li>
+                                <li>IBM Entitlement Key from <a href="https://myibm.ibm.com/products-services/containerlibrary" target="_blank">IBM Container Library</a></li>
+                                <li>Cluster admin access</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="guide-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Clone Repository and Setup Environment</h3>
+                            <pre data-cmd="git clone {repoBase}.git&#10;cd {repoName}/scripts&#10;&#10;# Create and activate virtual environment&#10;python -m venv venv&#10;source venv/bin/activate  # On Windows: venv\Scripts\activate&#10;&#10;# Install dependencies&#10;pip install -r requirements.txt"><code>git clone https://github.com/ibm-ecm/ibm-content-assistant-client-managed-software.git
+cd ibm-content-assistant-client-managed-software/scripts
+
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt</code></pre>
+                        </div>
+                    </div>
+                    
+                    <div class="guide-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Deploy Operators</h3>
+                            <pre><code># Interactive deployment with guided configuration
+python deploy_operator.py
+
+# Follow prompts to:
+# - Select operators to deploy
+# - Configure namespaces
+# - Set image pull secrets
+# - Verify prerequisites</code></pre>
+
+                            <!-- Internal dev: GITHUB_TOKEN + --dev flag -->
+                            <div data-internal-only style="display:none; margin-top:1rem;">
+                                <div style="padding: 0.75rem 1rem; background:#fff8e1; border-left:4px solid #f59e0b; border-radius:4px; font-size:0.875rem; margin-bottom:0.75rem;">
+                                    <strong>🔒 Dev mode — <code>GITHUB_TOKEN</code> required.</strong>
+                                    Running with <code>--dev</code> pulls pre-release chart artifacts from the internal GHE repository.
+                                    Export your GHE personal access token (<code>repo</code> scope) before running the command below.<br><br>
+                                    <a href="https://github.ibm.com/settings/tokens/new?description=ibm-content-assistant-helm&scopes=repo" target="_blank" style="color:#0f62fe;">Generate a personal access token →</a>
+                                </div>
+                                <pre><code>export GITHUB_TOKEN=&lt;your-ghe-token&gt;
+python deploy_operator.py --dev</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="guide-step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h3>Configure and Deploy Content</h3>
+                            <pre><code># Gather deployment properties
+python prerequisites.py gather
+
+# Generate deployment artifacts
+python prerequisites.py generate
+
+# Validate configuration
+python prerequisites.py validate</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- OpenShift Integration Method -->
+            <div class="method-content" id="method-openshift" style="display: none;">
+                <div class="guide-steps">
+                    <div class="guide-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Add Helm Repository in OpenShift</h3>
+
+                            <!-- PUBLIC: simple URL, no auth needed -->
+                            <div data-public-only style="display:none;">
+                                <p><strong>Option A: Using OpenShift Console</strong></p>
+                                <ul>
+                                    <li>Navigate to: <strong>Developer → Helm → Repositories</strong></li>
+                                    <li>Click <strong>Create</strong></li>
+                                    <li>Name: <code>ibm-content-assistant</code></li>
+                                    <li>URL: <code data-text-env="pagesBase/charts">https://ibm-ecm.github.io/ibm-content-assistant-client-managed-software/charts</code></li>
+                                </ul>
+                                <p style="margin-top: 1rem;"><strong>Option B: Using HelmChartRepository Resource</strong></p>
+                                <p>Create a HelmChartRepository custom resource (<a href="https://docs.redhat.com/en/documentation/openshift_container_platform/4.10/html/building_applications/working-with-helm-charts#adding-helm-chart-repositories_configuring-custom-helm-chart-repositories" target="_blank">documentation</a>):</p>
+                                <pre data-cmd="apiVersion: helm.openshift.io/v1beta1&#10;kind: HelmChartRepository&#10;metadata:&#10;  name: ibm-content-assistant&#10;spec:&#10;  name: IBM Content Assistant Charts&#10;  connectionConfig:&#10;    url: {pagesBase}/charts"><code>apiVersion: helm.openshift.io/v1beta1
+kind: HelmChartRepository
+metadata:
+  name: ibm-content-assistant
+spec:
+  name: IBM Content Assistant Charts
+  connectionConfig:
+    url: https://ibm-ecm.github.io/ibm-content-assistant-client-managed-software/charts</code></pre>
+                                <pre><code>oc apply -f helmchartrepository.yaml</code></pre>
+                            </div>
+
+                            <!-- INTERNAL: raw URL requires GHE basic auth -->
+                            <div data-internal-only style="display:none;">
+                                <div style="margin-bottom:0.75rem; padding: 0.75rem 1rem; background:#fff8e1; border-left:4px solid #f59e0b; border-radius:4px; font-size:0.875rem;">
+                                    <strong>🔒 IBM GHE credentials required.</strong>
+                                    The Pages URL is SSO-gated. OpenShift must pull chart archives from
+                                    <code>raw.github.ibm.com</code> using basic auth credentials.
+                                    See <strong>Step 2</strong> below to create the credentials secret first, then apply this config in the same namespace:
+                                </div>
+                                <pre><code>apiVersion: helm.openshift.io/v1beta1
+kind: ProjectHelmChartRepository
+metadata:
+  name: ibm-content-assistant
+  namespace: ibm-content
+spec:
+  name: IBM Content Assistant Charts
+  connectionConfig:
+    url: https://raw.github.ibm.com/dba/cert-kubernetes-content-assistant/gh-pages/docs
+    basicAuthConfig:
+      name: ibm-content-assistant-helm-credentials</code></pre>
+                                <pre><code>oc apply -f projecthelmchartrepository.yaml -n ibm-content</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Step 2: credentials secret — internal only -->
+                    <div class="guide-step" data-internal-only style="display:none;">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Create GHE Credentials Secret</h3>
+                            <p>Generate a personal access token with <code>repo</code> scope at
+                                <a href="https://github.ibm.com/settings/tokens/new?description=ibm-content-assistant-helm&scopes=repo" target="_blank" style="color:#0f62fe;">github.ibm.com → Settings → Developer settings → Personal access tokens</a>.
+                            </p>
+                            <p style="margin-top:0.5rem;">Create the secret in the <strong>same namespace</strong> as the <code>ProjectHelmChartRepository</code> (<code>ibm-content</code>). The secret must have keys <code>username</code> and <code>password</code>:</p>
+                            <pre><code>oc create secret generic ibm-content-assistant-helm-credentials \
+  --from-literal=username=&lt;your-ghe-username&gt; \
+  --from-literal=password=&lt;your-ghe-token&gt; \
+  -n ibm-content</code></pre>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Create Project — internal only -->
+                    <div class="guide-step" data-internal-only style="display:none;">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Create Project and Image Pull Secret</h3>
+                            <pre><code># Create project
+oc new-project ibm-content
+
+# Create image pull secret
+oc create secret docker-registry ibm-entitlement-key \
+  --docker-server=cp.icr.io \
+  --docker-username=cp \
+  --docker-password=&lt;your-entitlement-key&gt; \
+  -n ibm-content</code></pre>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Create Project — public only -->
+                    <div class="guide-step" data-public-only style="display:none;">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Create Project and Image Pull Secret</h3>
+                            <pre><code># Create project
+oc new-project ibm-content
+
+# Create image pull secret
+oc create secret docker-registry ibm-entitlement-key \
+  --docker-server=cp.icr.io \
+  --docker-username=cp \
+  --docker-password=&lt;your-entitlement-key&gt; \
+  -n ibm-content</code></pre>
+                        </div>
+                    </div>
+
+                    <!-- Step 4/3: Install from Developer Catalog -->
+                    <div class="guide-step" data-internal-only style="display:none;">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h3>Install from Developer Catalog</h3>
+                            <ul>
+                                <li>Navigate to: <strong>Developer → +Add → Helm Chart</strong></li>
+                                <li>Search for "IBM Content Operator" or "IBM CCx AI Services"</li>
+                                <li>Click chart and select <strong>Install Helm Chart</strong></li>
+                                <li>Configure values and click <strong>Install</strong></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="guide-step" data-public-only style="display:none;">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Install from Developer Catalog</h3>
+                            <ul>
+                                <li>Navigate to: <strong>Developer → +Add → Helm Chart</strong></li>
+                                <li>Search for "IBM Content Operator" or "IBM CCx AI Services"</li>
+                                <li>Click chart and select <strong>Install Helm Chart</strong></li>
+                                <li>Configure values and click <strong>Install</strong></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Step 5/4: Verify -->
+                    <div class="guide-step" data-internal-only style="display:none;">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            <h3>Verify Installation</h3>
+                            <pre><code># Check operator pods
+oc get pods -n ibm-content
+
+# View Helm releases
+helm list -n ibm-content</code></pre>
+                        </div>
+                    </div>
+
+                    <div class="guide-step" data-public-only style="display:none;">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h3>Verify Installation</h3>
+                            <pre><code># Check operator pods
+oc get pods -n ibm-content
+
+# View Helm releases
+helm list -n ibm-content</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Helm CLI Method -->
+            <div class="method-content" id="method-helm" style="display: none;">
+                <div class="guide-steps">
+                    <div class="guide-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Prerequisites</h3>
+                            <ul>
+                                <li>Kubernetes 1.24+ or OpenShift 4.12+</li>
+                                <li>Helm 4.0+</li>
+                                <li>IBM Entitlement Key from <a href="https://myibm.ibm.com/products-services/containerlibrary" target="_blank">IBM Container Library</a></li>
+                                <li>Cluster admin access (for cluster-scoped services)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="guide-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Add Helm Repository</h3>
+                            <!-- Public -->
+                            <div data-public-only style="display:none;">
+                                <pre data-cmd="helm repo add ibm-content-assistant {pagesBase}/charts&#10;helm repo update&#10;helm search repo ibm-content-assistant"><code>helm repo add ibm-content-assistant https://ibm-ecm.github.io/ibm-content-assistant-client-managed-software/charts
+helm repo update
+helm search repo ibm-content-assistant</code></pre>
+                            </div>
+                            <!-- Internal: requires GHE credentials -->
+                            <div data-internal-only style="display:none;">
+                                <div style="margin-bottom:0.75rem; padding: 0.75rem 1rem; background:#fff8e1; border-left:4px solid #f59e0b; border-radius:4px; font-size:0.875rem;">
+                                    <strong>🔒 IBM GHE credentials required.</strong>
+                                    The Pages URL is SSO-gated and cannot be used with Helm CLI.
+                                    Use the raw content URL with your GHE username and a personal access token (<code>repo</code> scope).<br><br>
+                                    <strong>Step 1 — Generate a token:</strong><br>
+                                    Go to <a href="https://github.ibm.com/settings/tokens/new?description=ibm-content-assistant-helm&scopes=repo" target="_blank" style="color:#0f62fe;">github.ibm.com → Settings → Developer settings → Personal access tokens → Generate new token</a><br>
+                                    Enable the <code>repo</code> scope, then copy the token value.
+                                    <br><br>
+                                    <strong>Step 2 — Add the repository:</strong>
+                                </div>
+                                <pre data-cmd="helm repo add ibm-content-assistant {rawBase} \&#10;  --username &lt;your-ghe-username&gt; \&#10;  --password &lt;your-ghe-token&gt;&#10;helm repo update&#10;helm search repo ibm-content-assistant"><code>helm repo add ibm-content-assistant https://raw.github.ibm.com/dba/cert-kubernetes-content-assistant/gh-pages/docs \
+  --username <your-ghe-username> \
+  --password <your-ghe-token>
+helm repo update
+helm search repo ibm-content-assistant</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="guide-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Create Namespace and Secret</h3>
+                            <pre><code>kubectl create namespace ibm-content
+
+kubectl create secret docker-registry ibm-entitlement-key \
+  --docker-server=cp.icr.io \
+  --docker-username=cp \
+  --docker-password=<your-entitlement-key> \
+  --namespace ibm-content</code></pre>
+                        </div>
+                    </div>
+                    
+                    <div class="guide-step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h3>Install Operator</h3>
+                            <pre><code># Install Content Assistant Operator (manages the GenAI Connector automatically)
+helm install content-assistant-operator ibm-content-assistant/ibm-content-assistant-operator \
+  --namespace ibm-content-assistant
+
+# Verify installation
+kubectl get pods -n ibm-content
+helm list -n ibm-content</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>IBM Content Assistant</h4>
+                    <p>Enterprise Content Management for Kubernetes & OpenShift</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Resources</h4>
+                    <ul>
+                        <li><a href="helm-charts.html">Helm Charts</a></li>
+                        <li><a href="releases.html">Releases</a></li>
+                        <li><a href="https://www.ibm.com/docs/en/cacms/1.0.x" target="_blank">Documentation</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Community</h4>
+                    <ul>
+                        <li><a href="#" target="_blank" data-href-env="repoBase">GitHub</a></li>
+                        <li><a href="#" target="_blank" data-href-env="repoBase/issues">Issues</a></li>
+                        <li><a href="https://community.ibm.com/community/user/automation/communities/community-home?communitykey=2b67f465-a5fe-4a66-ad25-f5e767b607e3" target="_blank">Forums</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Support</h4>
+                    <ul>
+                        <li><a href="https://www.ibm.com/mysupport" target="_blank">IBM Support</a></li>
+                        <li><a href="mailto:ecm-container-service@ibm.com">Contact Us</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>Licensed Materials - Property of IBM</p>
+                <p>© Copyright IBM Corp. 2026. All Rights Reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="./assets/script.js?v=2"></script>
+    <script src="./assets/helm-charts.js?v=2"></script>
+</body>
+</html>

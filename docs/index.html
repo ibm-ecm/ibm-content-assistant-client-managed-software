@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IBM Content Assistant - Generative AI for Enterprise Content</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Carbon Design System v11 - Latest from Official Repository -->
+    <!-- https://github.com/carbon-design-system/carbon/tree/main/packages/styles -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@carbon/styles@latest/css/styles.min.css">
+    
+    <!-- Carbon Web Components - Latest from Official Repository -->
+    <!-- https://github.com/carbon-design-system/carbon/tree/main/packages/web-components -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@carbon/web-components@latest/dist/index.min.js"></script>
+    
+    <link rel="stylesheet" href="./assets/styles.css?v=2">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <img src="./assets/ICALogo.svg" alt="IBM Content Assistant Logo" class="nav-logo">
+                <span class="nav-title">IBM Content Assistant</span>
+            </div>
+            <ul class="nav-menu" id="navMenu">
+                <li><a href="index.html" class="nav-link active">Home</a></li>
+                <li><a href="helm-charts.html" class="nav-link">Helm Charts</a></li>
+                <li><a href="releases.html" class="nav-link">Releases & Patches</a></li>
+                <li><a href="https://www.ibm.com/docs/en/cacms/1.0.x" class="nav-link" target="_blank">Documentation</a></li>
+                <li><a href="#" class="nav-link" target="_blank" data-href-env="repoBase">GitHub</a></li>
+            </ul>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="cds--grid cds--grid--full-width">
+            <div class="cds--row">
+                <div class="cds--col-lg-8 cds--col-md-6 cds--col-sm-4">
+                    <h1 class="hero-title">IBM Content Assistant</h1>
+                    <p class="hero-subtitle cds--type-heading-03">Generative AI for Enterprise Content on Kubernetes & OpenShift</p>
+                    <p class="hero-description cds--type-body-01">
+                        Unlock natural language insights across your IBM Content Cortex repository.
+                        Summarize documents, compare versions, and answer questions using watsonx LLMs —
+                        deployed as a client-managed add-on to your existing CPE + Content Navigator environment
+                        on <strong>IBM Content Cortex</strong> or <strong>IBM Cloud Pak for Business Automation (CP4BA)</strong>.
+                        A single Helm chart installs the operator, which deploys and manages the GenAI Connector.
+                        Usage is metered automatically via <strong>IBM Usage Metering Service (UMS)</strong>.
+                    </p>
+                    <div class="hero-actions">
+                        <button class="cds--btn cds--btn--primary" onclick="window.location.href='helm-charts.html'">
+                            Get Started
+                            <svg class="cds--btn__icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M11.8 2.8L10.8 3.8 12.2 5.3 5 5.3 5 6.7 12.2 6.7 10.8 8.2 11.8 9.2 15 6z"></path>
+                                <path d="M11 14L4 14 4 2 11 2 11 0 4 0C2.9 0 2 0.9 2 2L2 14C2 15.1 2.9 16 4 16L11 16C12.1 16 13 15.1 13 14L13 10 11 10 11 14z"></path>
+                            </svg>
+                        </button>
+                        <button class="cds--btn cds--btn--secondary" onclick="window.location.href='releases.html'">
+                            View Releases
+                        </button>
+                    </div>
+                    <div class="hero-badges">
+                        <span class="cds--tag cds--tag--blue">v1.0.x</span>
+                        <span class="cds--tag cds--tag--cool-gray">Kubernetes 1.24+</span>
+                        <span class="cds--tag cds--tag--cool-gray">OpenShift 4.12+</span>
+                        <span class="cds--tag cds--tag--cool-gray">Helm 4.0+</span>
+                        <span class="cds--tag cds--tag--teal">watsonx LLM</span>
+                    </div>
+                </div>
+                </div>
+                <div class="cds--col-lg-8 cds--col-md-2 cds--col-sm-0 hero-image-col">
+                    <img src="./assets/ICALogo.svg" alt="IBM Content Assistant" class="hero-logo">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features">
+        <div class="cds--grid">
+            <div class="cds--row">
+                <div class="cds--col-lg-16">
+                    <h2 class="section-title cds--type-heading-04">Key Features</h2>
+                </div>
+            </div>
+            <div class="cds--row features-row">
+                <div class="cds--col-lg-5 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile cds--tile--clickable feature-tile">
+                        <div class="feature-icon">🤖</div>
+                        <h3 class="cds--type-heading-03">Natural Language Queries</h3>
+                        <p class="cds--type-body-01">Ask questions in plain English across your entire Content Cortex repository and receive accurate, context-grounded answers powered by IBM watsonx LLMs.</p>
+                    </div>
+                </div>
+                <div class="cds--col-lg-5 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile cds--tile--clickable feature-tile">
+                        <div class="feature-icon">☸️</div>
+                        <h3 class="cds--type-heading-03">Client-Managed Deployment</h3>
+                        <p class="cds--type-body-01">Deploy Content Assistant as an add-on to your existing Content Cortex or CP4BA environment on Kubernetes or OpenShift — your content never leaves your infrastructure.</p>
+                    </div>
+                </div>
+                <div class="cds--col-lg-5 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile cds--tile--clickable feature-tile">
+                        <div class="feature-icon">🔒</div>
+                        <h3 class="cds--type-heading-03">Enterprise Security</h3>
+                        <p class="cds--type-body-01">Adheres to Content Cortex's enterprise-grade security model and access controls. Full traceability with document inspection and Q&A auditability.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="cds--row features-row">
+                <div class="cds--col-lg-5 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile cds--tile--clickable feature-tile">
+                        <div class="feature-icon">📝</div>
+                        <h3 class="cds--type-heading-03">Document Summarization</h3>
+                        <p class="cds--type-body-01">Automatically generate tailored summaries of lengthy documents — including contracts, policies, and reports — reducing manual review time dramatically.</p>
+                    </div>
+                </div>
+                <div class="cds--col-lg-5 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile cds--tile--clickable feature-tile">
+                        <div class="feature-icon">🔍</div>
+                        <h3 class="cds--type-heading-03">Document Comparison</h3>
+                        <p class="cds--type-body-01">Compare documents and versions side-by-side to surface differences — such as changes between two versions of a policy or contract.</p>
+                    </div>
+                </div>
+                <div class="cds--col-lg-5 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile cds--tile--clickable feature-tile">
+                        <div class="feature-icon">🧠</div>
+                        <h3 class="cds--type-heading-03">RAG-Powered Accuracy</h3>
+                        <p class="cds--type-body-01">Retrieval-Augmented Generation (RAG) grounds every answer in your specific repository content, preventing hallucinations and ensuring responses are relevant to your business.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quick Start Section -->
+    <section class="quick-start">
+        <div class="cds--grid">
+            <div class="cds--row">
+                <div class="cds--col-lg-16">
+                    <h2 class="section-title cds--type-heading-04">Quick Start</h2>
+                </div>
+            </div>
+            <div class="cds--row">
+                <div class="cds--col-lg-16">
+                    <div class="cds--tile quick-start-tile">
+                        <div class="quick-start-steps">
+                            <div class="step">
+                                <div class="step-header">
+                                    <span class="cds--tag cds--tag--blue step-number">1</span>
+                                    <h3 class="cds--type-heading-03">Setup Environment</h3>
+                                </div>
+                                <div class="step-content">
+                                    <pre class="cds--snippet cds--snippet--multi" data-cmd="git clone {repoBase}.git&#10;cd {repoName}/scripts&#10;&#10;# Create and activate virtual environment&#10;python -m venv venv&#10;source venv/bin/activate  # On Windows: venv\Scripts\activate&#10;&#10;# Install dependencies&#10;pip install -r requirements.txt"><code>git clone https://github.com/ibm-ecm/ibm-content-assistant-containers.git
+cd ibm-content-assistant-containers/scripts
+
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt</code></pre>
+                                </div>
+                            </div>
+                            <div class="step">
+                                <div class="step-header">
+                                    <span class="cds--tag cds--tag--blue step-number">2</span>
+                                    <h3 class="cds--type-heading-03">Deploy Operators</h3>
+                                </div>
+                                <div class="step-content">
+                                    <p class="cds--type-body-01">Interactive deployment of the Content Assistant operator with guided configuration.</p>
+                                    <pre class="cds--snippet cds--snippet--single"><code>python deploy_operator.py</code></pre>
+                                </div>
+                            </div>
+                            <div class="step">
+                                <div class="step-header">
+                                    <span class="cds--tag cds--tag--blue step-number">3</span>
+                                    <h3 class="cds--type-heading-03">Configure & Deploy</h3>
+                                </div>
+                                <div class="step-content">
+                                    <p class="cds--type-body-01">Gather deployment properties, generate deployment artifacts, and validate your Content Assistant configuration.</p>
+                                    <pre class="cds--snippet cds--snippet--multi"><code># Gather deployment properties
+python prerequisites.py gather
+
+# Generate deployment artifacts
+python prerequisites.py generate
+
+# Validate all properties
+python prerequisites.py validate</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Components Section -->
+    <section class="components">
+        <div class="cds--grid">
+            <div class="cds--row">
+                <div class="cds--col-lg-16">
+                    <h2 class="section-title cds--type-heading-04">Architecture Overview</h2>
+                    <p class="cds--type-body-01" style="margin-bottom: 2rem; color: var(--text-secondary, #525252);">
+                        IBM Content Assistant is a <strong>single-chart add-on</strong>. Install the operator — it provisions and manages the GenAI Connector for you.
+                        Content Assistant runs alongside your existing Content Cortex or CP4BA deployment, and usage is metered automatically via UMS.
+                    </p>
+                </div>
+            </div>
+            <!-- Row 1: Operator (install) + GenAI Connector (managed by operator) -->
+            <div class="cds--row">
+                <div class="cds--col-lg-8 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile component-tile">
+                        <div class="component-header">
+                            <h3 class="cds--type-heading-03">IBM Content Assistant Operator</h3>
+                            <span class="cds--tag cds--tag--green">v1.0.4 — Install this</span>
+                        </div>
+                        <p class="cds--type-body-01 component-description">
+                            The <strong>single Helm chart</strong> you install. This namespace-scoped Kubernetes operator manages the complete lifecycle of IBM Content Assistant —
+                            it deploys, configures, and upgrades the GenAI Connector Service automatically via a <code>ContentAssistant</code> Custom Resource.
+                        </p>
+                        <ul class="component-features cds--type-body-01">
+                            <li>✓ One chart installs everything</li>
+                            <li>✓ Deploys &amp; manages the GenAI Connector</li>
+                            <li>✓ Custom Resource (CR) driven configuration</li>
+                            <li>✓ Air-gap / offline deployment support</li>
+                        </ul>
+                        <a href="helm-charts.html" class="cds--link component-link">View Chart →</a>
+                    </div>
+                </div>
+
+                <div class="cds--col-lg-8 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile component-tile">
+                        <div class="component-header">
+                            <h3 class="cds--type-heading-03">GenAI Connector Service</h3>
+                            <span class="cds--tag cds--tag--cool-gray">Deployed by operator</span>
+                        </div>
+                        <p class="cds--type-body-01 component-description">
+                            The AI service managed and deployed by the operator — <strong>not installed separately</strong>.
+                            Bridges IBM Content Cortex with IBM watsonx LLMs using Retrieval-Augmented Generation (RAG)
+                            to deliver natural language Q&amp;A, summarization, and document comparison.
+                        </p>
+                        <ul class="component-features cds--type-body-01">
+                            <li>✓ Natural language Q&amp;A across CPE repositories</li>
+                            <li>✓ Document summarization &amp; comparison</li>
+                            <li>✓ RAG-powered watsonx LLM integration</li>
+                            <li>✓ Lifecycle fully managed by the operator</li>
+                        </ul>
+                        <a href="https://www.ibm.com/docs/en/cacms/1.0.x" class="cds--link component-link" target="_blank">Documentation →</a>
+                    </div>
+                </div>
+            </div>
+            <!-- Row 2: Foundation prereqs + UMS metering -->
+            <div class="cds--row">
+                <div class="cds--col-lg-8 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile component-tile">
+                        <div class="component-header">
+                            <h3 class="cds--type-heading-03">CPE + Content Navigator (Foundation)</h3>
+                            <span class="cds--tag cds--tag--cool-gray">Prerequisite</span>
+                        </div>
+                        <p class="cds--type-body-01 component-description">
+                            Content Assistant is an add-on to an existing IBM Content Cortex or CP4BA deployment.
+                            Content Platform Engine (CPE) and Content Navigator must already be running on
+                            <strong>IBM Content Cortex</strong> or <strong>IBM Cloud Pak for Business Automation (CP4BA)</strong>.
+                        </p>
+                        <ul class="component-features cds--type-body-01">
+                            <li>✓ IBM CP4BA <em>or</em> IBM Content Cortex deployment</li>
+                            <li>✓ Content Platform Engine (CPE)</li>
+                            <li>✓ Content Navigator (ICN)</li>
+                            <li>✓ CPE object store &amp; enterprise security model</li>
+                        </ul>
+                        <a href="https://www.ibm.com/docs/en/cacms/1.0.x" class="cds--link component-link" target="_blank">Learn More →</a>
+                    </div>
+                </div>
+
+                <div class="cds--col-lg-8 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile component-tile">
+                        <div class="component-header">
+                            <h3 class="cds--type-heading-03">IBM Usage Metering Service (UMS)</h3>
+                            <span class="cds--tag cds--tag--purple">Usage Metering</span>
+                        </div>
+                        <p class="cds--type-body-01 component-description">
+                            Content Assistant reports usage automatically to IBM through the
+                            <strong>IBM Usage Metering Service (UMS)</strong>. No manual license tracking is required —
+                            metering is built into the operator and activated via your IBM entitlement key.
+                        </p>
+                        <ul class="component-features cds--type-body-01">
+                            <li>✓ Automatic usage reporting to IBM</li>
+                            <li>✓ Activated via IBM entitlement key</li>
+                            <li>✓ No separate metering configuration required</li>
+                            <li>✓ Consistent with CP4BA &amp; Content Cortex licensing</li>
+                        </ul>
+                        <a href="https://www.ibm.com/docs/en/cacms/1.0.x" class="cds--link component-link" target="_blank">Documentation →</a>
+                    </div>
+                </div>
+            </div>
+            <!-- Row 3: watsonx LLM -->
+            <div class="cds--row">
+                <div class="cds--col-lg-8 cds--col-md-4 cds--col-sm-4">
+                    <div class="cds--tile component-tile">
+                        <div class="component-header">
+                            <h3 class="cds--type-heading-03">LLM Endpoint</h3>
+                            <span class="cds--tag cds--tag--teal">Bring Your Own</span>
+                        </div>
+                        <p class="cds--type-body-01 component-description">
+                            Content Assistant supports flexible AI hosting. Connect directly to IBM watsonx.ai
+                            or route requests through <strong>IBM AI Model Gateway</strong> to access a broad range
+                            of models — on IBM Cloud, AWS, or on-premises.
+                        </p>
+                        <ul class="component-features cds--type-body-01">
+                            <li>✓ IBM watsonx.ai SaaS (IBM Cloud)</li>
+                            <li>✓ IBM watsonx.ai SaaS (AWS)</li>
+                            <li>✓ Self-managed watsonx on-premises</li>
+                            <li>
+                                <img src="./assets/AIModelGateway.svg" alt="" style="height:1em;width:auto;vertical-align:middle;margin-right:0.3em;">
+                                IBM AI Model Gateway (proxy to multiple LLM providers)
+                            </li>
+                            <li>✓ OpenSearch vector database integration</li>
+                        </ul>
+                        <a href="https://www.ibm.com/watsonx" class="cds--link component-link" target="_blank">Learn More →</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Resources Section -->
+    <section class="resources">
+        <div class="container">
+            <h2 class="section-title">Resources</h2>
+            <div class="resources-grid">
+                <a href="helm-charts.html" class="resource-card">
+                    <div class="resource-icon">📦</div>
+                    <h3>Helm Charts</h3>
+                    <p>Browse and download Helm charts for all operators and services</p>
+                </a>
+                <a href="releases.html" class="resource-card">
+                    <div class="resource-icon">🏷️</div>
+                    <h3>Releases & Patches</h3>
+                    <p>View release notes, iFixes, and version history</p>
+                </a>
+                <a href="https://www.ibm.com/docs/en/cacms/1.0.x" class="resource-card" target="_blank">
+                    <div class="resource-icon">📚</div>
+                    <h3>Documentation</h3>
+                    <p>Complete installation guides and reference documentation</p>
+                </a>
+                <a href="#" class="resource-card" target="_blank" data-href-env="repoBase">
+                    <div class="resource-icon">💻</div>
+                    <h3>GitHub Repository</h3>
+                    <p>Source code, examples, and Python DevOps scripts</p>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>IBM Content Assistant</h4>
+                    <p>Generative AI for IBM Content Cortex on Kubernetes & OpenShift</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Resources</h4>
+                    <ul>
+                        <li><a href="helm-charts.html">Helm Charts</a></li>
+                        <li><a href="releases.html">Releases</a></li>
+                        <li><a href="https://www.ibm.com/docs/en/cacms/1.0.x" target="_blank">Documentation</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Community</h4>
+                    <ul>
+                        <li><a href="#" target="_blank" data-href-env="repoBase">GitHub</a></li>
+                        <li><a href="#" target="_blank" data-href-env="repoBase/issues">Issues</a></li>
+                        <li><a href="https://community.ibm.com/community/user/automation/communities/community-home?communitykey=2b67f465-a5fe-4a66-ad25-f5e767b607e3" target="_blank">Forums</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Support</h4>
+                    <ul>
+                        <li><a href="https://www.ibm.com/mysupport" target="_blank">IBM Support</a></li>
+                        <li><a href="mailto:ecm-container-service@ibm.com">Contact Us</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>Licensed Materials - Property of IBM</p>
+                <p>© Copyright IBM Corp. 2026. All Rights Reserved.</p>
+                <p>US Government Users Restricted Rights - Use, duplication or disclosure restricted by GSA ADP Schedule Contract with IBM Corp.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="./assets/script.js"></script>
+</body>
+</html>

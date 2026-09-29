@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Releases & Patches - IBM Content Assistant</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Carbon Design System v11 - Latest from Official Repository -->
+    <!-- https://github.com/carbon-design-system/carbon/tree/main/packages/styles -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@carbon/styles@latest/css/styles.min.css">
+    
+    <!-- Carbon Web Components - Latest from Official Repository -->
+    <!-- https://github.com/carbon-design-system/carbon/tree/main/packages/web-components -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@carbon/web-components@latest/dist/index.min.js"></script>
+    
+    <link rel="stylesheet" href="./assets/styles.css">
+    <link rel="stylesheet" href="./assets/releases.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <img src="./assets/ICALogo.svg" alt="IBM Content Assistant Logo" class="nav-logo">
+                <span class="nav-title">IBM Content Assistant</span>
+            </div>
+            <ul class="nav-menu" id="navMenu">
+                <li><a href="index.html" class="nav-link">Home</a></li>
+                <li><a href="helm-charts.html" class="nav-link">Helm Charts</a></li>
+                <li><a href="releases.html" class="nav-link active">Releases & Patches</a></li>
+                <li><a href="https://www.ibm.com/docs/en/cacms/1.0.x" class="nav-link" target="_blank">Documentation</a></li>
+                <li><a href="#" class="nav-link" target="_blank" data-href-env="repoBase">GitHub</a></li>
+            </ul>
+            <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Page Header -->
+    <section class="page-header">
+        <div class="container">
+            <h1>Releases & Patches</h1>
+            <p>Version history, release notes, and interim fixes for IBM Content Assistant</p>
+        </div>
+    </section>
+
+    <!-- Releases Container -->
+    <section class="releases-section">
+        <div class="container">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                <h2 class="section-title" style="margin: 0;">Releases & Patches</h2>
+                <div class="stream-selector">
+                    <label for="release-stream-select" style="margin-right: 0.5rem; font-weight: 500; color: var(--gray-70);">Release Stream:</label>
+                    <select id="release-stream-select" class="stream-select">
+                        <option value="1.0.x" selected>1.0.x (Current)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 1.0.x Stream -->
+            <div class="release-stream active" data-stream="1.0.x">
+                <div class="stream-header">
+                    <h2>IBM Content Assistant 1.0.x</h2>
+                    <span class="stream-status current">Current Release Stream</span>
+                </div>
+
+                <!-- 1.0.4 — Latest -->
+                <div class="release-card">
+                    <div class="release-header">
+                        <div class="release-info">
+                            <h3>IBM Content Assistant 1.0.4</h3>
+                            <div class="release-meta">
+                                        <span class="release-date">📅 September 30, 2026</span>
+                                <span class="release-type patch">Patch Release</span>
+                                <span class="release-type" style="background: var(--green-20); color: var(--green-70); border-color: var(--green-40);">✓ Latest Release</span>
+                            </div>
+                        </div>
+                        <a href="https://github.com/ibm-ecm/ibm-content-assistant-client-managed-software/releases/tag/v1.0.4" class="btn btn-primary" target="_blank" data-href-env="repoBase/releases/tag/v1.0.4">
+                            View on GitHub
+                        </a>
+                    </div>
+
+                    <div class="release-content">
+                        <div class="release-section">
+                            <h4>🔧 Component Versions</h4>
+                            <div class="component-versions">
+                                <div class="version-item">
+                                    <span class="component-name">IBM Content Assistant Operator</span>
+                                    <span class="component-version">1.0.4</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">GenAI Connector</span>
+                                    <span class="component-version">1.0.4</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">IBM Usage Metering Service (UMS)</span>
+                                    <span class="component-version">1.0.7</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="release-section">
+                            <h4 style="display:flex;align-items:center;gap:0.5rem;">
+                                <img src="./assets/red-hat-1.svg" alt="Red Hat" style="height:1.1em;width:auto;vertical-align:middle;">
+                                Base Image Versions
+                            </h4>
+                            <div class="component-versions">
+                                <div class="version-item">
+                                    <span class="component-name">Red Hat Universal Base Image (UBI)</span>
+                                    <span class="component-version">RHEL UBI 9.8</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">Python</span>
+                                    <span class="component-version">3.13.3</span>
+                                </div>
+                                <div class="version-item">
+                                    <span class="component-name">GoLang (Operator)</span>
+                                    <span class="component-version">1.26.4</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="release-section">
+                            <h4>📋 System Requirements</h4>
+                            <ul>
+                                <li>Kubernetes 1.24+ or OpenShift 4.12+</li>
+                                <li>Helm 3.0+</li>
+                                <li>Existing IBM Content Cortex or CP4BA deployment (CPE + ICN)</li>
+                                <li>IBM Entitlement Key from <a href="https://myibm.ibm.com/products-services/containerlibrary" target="_blank">IBM Container Library</a></li>
+                                <li>IBM watsonx.ai access (IBM Cloud or AWS) or self-managed endpoint</li>
+                                <li>OpenSearch cluster for vector storage</li>
+                            </ul>
+                        </div>
+
+                        <div class="release-section">
+                            <h4>🔗 Resources</h4>
+                            <div class="resource-links">
+                                <a href="https://www.ibm.com/docs/en/cacms/1.0.x" class="resource-link" target="_blank">
+                                    📚 Documentation
+                                </a>
+                                <a href="helm-charts.html" class="resource-link">
+                                    📦 Helm Charts
+                                </a>
+                                <a href="https://github.com/ibm-ecm/ibm-content-assistant-client-managed-software/releases/tag/v1.0.4" class="resource-link" target="_blank" data-href-env="repoBase/releases/tag/v1.0.4">
+                                    🏷️ Release Notes
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Patch history summary -->
+                <div class="ifix-section">
+                    <h3>Patch History — 1.0.x</h3>
+                    <p class="ifix-description">
+                        All releases in the 1.0.x stream are patch updates. Each includes all prior fixes.
+                    </p>
+                    <div id="ifix-container">
+                        <div class="ifix-card ifix-card--ref">
+                            <div class="ifix-header">
+                                        <div class="ifix-info">
+                                            <h4>1.0.4</h4>
+                                            <span class="ifix-date">📅 September 30, 2026</span>
+                                        </div>
+                                <span class="ifix-badge">Latest Patch</span>
+                            </div>
+                            <p class="ifix-ref-note">Full release details are shown above. Quick links:</p>
+                            <div class="ifix-actions">
+                                <a href="https://github.com/ibm-ecm/ibm-content-assistant-client-managed-software/releases/tag/v1.0.4" class="btn btn-outline" target="_blank" data-href-env="repoBase/releases/tag/v1.0.4">View on GitHub</a>
+                                <a href="https://www.ibm.com/docs/en/cacms/1.0.x" class="btn btn-outline" target="_blank">Documentation</a>
+                                <a href="helm-charts.html" class="btn btn-outline">Helm Charts</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- Upgrade Guide -->
+    <section class="upgrade-guide">
+        <div class="container">
+            <h2 class="section-title">Upgrade Guide</h2>
+            <div class="upgrade-content">
+                <div class="upgrade-card">
+                    <h3>📖 Upgrade Documentation</h3>
+                    <p>Comprehensive guides for upgrading between versions:</p>
+                    <ul>
+                        <li><a href="https://www.ibm.com/docs/en/cacms/1.0.x" target="_blank">IBM Content Assistant Documentation</a></li>
+                        <li><a href="https://github.com/ibm-ecm/ibm-content-assistant-client-managed-software/tree/main/scripts" target="_blank" data-href-env="repoBase/tree/main/scripts">Deployment Scripts</a></li>
+                    </ul>
+                </div>
+
+                <div class="upgrade-card">
+                    <h3>🔄 Upgrade Paths</h3>
+                    <p style="margin-bottom: 1rem; color: var(--gray-70);">
+                        <strong>Supported upgrade paths for IBM Content Assistant 1.0.x</strong>
+                    </p>
+                    <div class="upgrade-paths">
+                        <div class="upgrade-path">
+                            <span class="path-from">any 1.0.x</span>
+                            <span class="path-arrow">→</span>
+                            <span class="path-to">1.0.4</span>
+                            <span class="path-status supported">✓ Supported</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 1rem; padding: 1rem; background: var(--blue-10); border-left: 4px solid var(--blue-60); border-radius: 4px;">
+                        <p style="margin: 0; font-size: 0.875rem; color: var(--gray-100);">
+                            <strong>ℹ️ Prerequisite:</strong> IBM Content Cortex or CP4BA (CPE + ICN) must already be deployed and operational before upgrading IBM Content Assistant.
+                            See the <a href="https://www.ibm.com/docs/en/cacms/1.0.x" target="_blank" style="color: var(--blue-60); text-decoration: underline;">IBM Content Assistant documentation</a>
+                            for full upgrade instructions.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="upgrade-card">
+                    <h3>🛠️ Upgrade via Helm</h3>
+                    <p>Use Helm to upgrade the operator (which manages the GenAI Connector automatically):</p>
+                    <pre><code>helm repo update
+
+# Upgrade operator (automatically upgrades the GenAI Connector)
+helm upgrade content-assistant-operator ibm-content-assistant/ibm-content-assistant-operator \
+  --namespace ibm-content-assistant</code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>IBM Content Assistant</h4>
+                    <p>Generative AI for IBM Content Cortex on Kubernetes & OpenShift</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Resources</h4>
+                    <ul>
+                        <li><a href="helm-charts.html">Helm Charts</a></li>
+                        <li><a href="releases.html">Releases</a></li>
+                        <li><a href="https://www.ibm.com/docs/en/cacms/1.0.x" target="_blank">Documentation</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Community</h4>
+                    <ul>
+                        <li><a href="#" target="_blank" data-href-env="repoBase">GitHub</a></li>
+                        <li><a href="#" target="_blank" data-href-env="repoBase/issues">Issues</a></li>
+                        <li><a href="https://community.ibm.com/community/user/automation/communities/community-home?CommunityKey=ecm" target="_blank">Forums</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Support</h4>
+                    <ul>
+                        <li><a href="https://www.ibm.com/mysupport" target="_blank">IBM Support</a></li>
+                        <li><a href="mailto:ecm-container-service@ibm.com">Contact Us</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>Licensed Materials - Property of IBM</p>
+                <p>© Copyright IBM Corp. 2026. All Rights Reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="./assets/script.js?v=2"></script>
+    <script src="./assets/releases.js"></script>
+</body>
+</html>
